@@ -15,128 +15,235 @@
         <span>视频素材收集台</span>
       </div>
       <nav class="nav" aria-label="主导航">
-        <a class="active" href="#overview">收集总览 <span id="navLyricCount">0</span></a>
-        <a href="#upload">上传入口 <span id="navPendingCount">0</span></a>
-        <a href="#admin">整理后台</a>
-        <a href="#relink">Relink 暂存</a>
+        <a data-nav-view="visitor" href="/">访客总览 <span id="navLyricCount">0</span></a>
+        <a data-nav-view="uploader" href="/uploader">我的上传 <span id="navUploaderCount">0</span></a>
+        <a data-nav-view="admin" href="/admin">管理后台 <span id="navPendingCount">0</span></a>
       </nav>
+      <div class="session-card">
+        <span>当前姓名</span>
+        <strong id="sessionName">未登录</strong>
+        <button type="button" class="text-button" data-action="logout">清除姓名</button>
+      </div>
     </aside>
 
     <main class="main">
-      <section class="topbar">
-        <div>
-          <h1>按歌词句子整理每个人的视频</h1>
-          <p class="lede">每个人可以上传多个片段，每个片段可以关联一句或多句歌词。歌词编辑后，结构受影响的视频进入暂存区，等待手动重新关联。</p>
-        </div>
-        <div class="toolbar">
-          <button type="button" data-action="reload">刷新</button>
-          <a class="button primary" href="#upload">新增上传</a>
-        </div>
-      </section>
-
-      <section class="stats" aria-label="收集统计">
-        <div class="stat"><span>歌词句子</span><strong id="statLyrics">0</strong></div>
-        <div class="stat"><span>已收视频</span><strong id="statVideos">0</strong></div>
-        <div class="stat"><span>参与人数</span><strong id="statPeople">0</strong></div>
-        <div class="stat"><span>待处理</span><strong id="statPending">0</strong></div>
-      </section>
-
-      <section class="workbench" id="overview">
-        <article class="panel">
-          <header class="panel-header">
-            <h2>歌词进度</h2>
-            <span>逐句统计</span>
-          </header>
-          <div class="lyric-list" id="lyricList"></div>
-        </article>
-
-        <article class="panel">
-          <header class="panel-header">
-            <h2>句子详情</h2>
-            <span id="detailCount">0 个视频</span>
-          </header>
-          <div class="detail">
-            <div class="detail-title">
-              <h2 id="detailLyric">加载中</h2>
-              <span class="badge" id="detailStatus">-</span>
-            </div>
-            <div class="edit-box">
-              <textarea id="lyricEditor" aria-label="歌词文本编辑"></textarea>
-              <div class="toolbar">
-                <button type="button" data-action="save-lyric">保存文字修改</button>
-              </div>
-              <span class="status-text" id="editStatus"></span>
-            </div>
-            <div class="video-grid" id="videoGrid"></div>
+      <section class="page" id="visitorPage" data-page="visitor">
+        <section class="topbar">
+          <div>
+            <h1>歌词和视频覆盖情况</h1>
+            <p class="lede">访客可查看已公开的视频素材覆盖进度。</p>
           </div>
-        </article>
+          <div class="toolbar">
+            <button type="button" data-action="reload">刷新</button>
+            <a class="button primary" href="/uploader">上传我的视频</a>
+          </div>
+        </section>
 
-        <aside class="side-stack" id="upload">
+        <section class="stats" aria-label="公开收集统计">
+          <div class="stat"><span>歌词句子</span><strong id="visitorStatLyrics">0</strong></div>
+          <div class="stat"><span>公开视频</span><strong id="visitorStatVideos">0</strong></div>
+          <div class="stat"><span>参与人数</span><strong id="visitorStatPeople">0</strong></div>
+          <div class="stat"><span>待补句子</span><strong id="visitorStatMissing">0</strong></div>
+        </section>
+
+        <section class="workbench public-workbench" id="overview">
           <article class="panel">
             <header class="panel-header">
-              <h2>上传素材</h2>
-              <span>待整理</span>
+              <h2>歌词进度</h2>
+              <span>逐句统计</span>
             </header>
-            <form class="form" id="uploadForm">
-              <div class="field">
-                <label for="personName">姓名</label>
-                <input id="personName" name="name" autocomplete="name" required>
-              </div>
-              <div class="field">
-                <label for="contact">联系方式</label>
-                <input id="contact" name="contact" placeholder="微信 / 手机 / 邮箱">
-              </div>
-              <div class="field">
-                <label for="uploadNote">备注</label>
-                <textarea id="uploadNote" name="note" placeholder="例如：唱的是副歌第二遍"></textarea>
-              </div>
-              <div class="field">
-                <label>选择歌词</label>
-                <div class="choice-list" id="uploadChoices"></div>
-              </div>
-              <label class="dropzone">
-                <input id="videoFiles" type="file" multiple accept="video/*" required>
-                <span>选择或拖入视频文件</span>
-                <small>提交后进入待整理</small>
-              </label>
-              <button class="primary" type="submit">提交上传</button>
-              <span class="status-text" id="uploadStatus"></span>
-            </form>
+            <div class="lyric-list" id="visitorLyricList"></div>
           </article>
-        </aside>
+
+          <article class="panel">
+            <header class="panel-header">
+              <h2>句子详情</h2>
+              <span id="visitorDetailCount">0 个视频</span>
+            </header>
+            <div class="detail">
+              <div class="detail-title">
+                <h2 id="visitorDetailLyric">加载中</h2>
+                <span class="badge" id="visitorDetailStatus">-</span>
+              </div>
+              <div class="video-grid" id="visitorVideoGrid"></div>
+            </div>
+          </article>
+        </section>
       </section>
 
-      <section class="footer-grid" id="admin">
-        <article class="panel">
-          <header class="panel-header">
-            <h2>待整理视频</h2>
-            <span>管理员确认后公开</span>
-          </header>
-          <div class="queue" id="pendingQueue"></div>
-        </article>
-
-        <article class="panel" id="relink">
-          <header class="panel-header">
-            <h2>Relink 暂存区</h2>
-            <span>歌词结构变化后处理</span>
-          </header>
-          <div class="queue" id="relinkQueue"></div>
-        </article>
-      </section>
-
-      <section class="panel structure-panel">
-        <header class="panel-header">
-          <h2>歌词结构编辑</h2>
-          <span>每行一句歌词</span>
-        </header>
-        <div class="structure-body">
-          <textarea id="structureEditor" aria-label="歌词结构编辑"></textarea>
-          <div class="toolbar">
-            <button type="button" data-action="save-structure">保存结构修改</button>
+      <section class="page" id="uploaderPage" data-page="uploader" hidden>
+        <section class="topbar">
+          <div>
+            <h1>我的上传</h1>
+            <p class="lede">输入姓名后上传素材，并查看这个姓名下的视频状态。</p>
           </div>
-          <p class="hint">结构保存会整体替换当前歌词，并把已有视频关联放入 Relink 暂存区。每一行会保存成一句歌词；普通错字和标点修改请用上方“保存文字修改”。</p>
-          <span class="status-text" id="structureStatus"></span>
-        </div>
+          <div class="toolbar">
+            <button type="button" data-action="reload">刷新</button>
+            <a class="button" href="/">查看总览</a>
+          </div>
+        </section>
+
+        <article class="panel login-panel" id="uploaderLoginPanel">
+          <header class="panel-header">
+            <h2>上传者登录</h2>
+            <span>无需密码</span>
+          </header>
+          <form class="form login-form" id="uploaderLoginForm">
+            <div class="field">
+              <label for="uploaderNameInput">姓名</label>
+              <input id="uploaderNameInput" name="name" autocomplete="name" required>
+            </div>
+            <button class="primary" type="submit">进入我的上传</button>
+          </form>
+        </article>
+
+        <section id="uploaderDashboard" hidden>
+          <section class="stats" aria-label="我的上传统计">
+            <div class="stat"><span>我的视频</span><strong id="uploaderStatTotal">0</strong></div>
+            <div class="stat"><span>待整理</span><strong id="uploaderStatPending">0</strong></div>
+            <div class="stat"><span>已公开</span><strong id="uploaderStatReviewed">0</strong></div>
+            <div class="stat"><span>已驳回</span><strong id="uploaderStatRejected">0</strong></div>
+          </section>
+
+          <section class="uploader-grid">
+            <article class="panel">
+              <header class="panel-header">
+                <h2>上传素材</h2>
+                <span id="uploadIdentity">未登录</span>
+              </header>
+              <form class="form" id="uploadForm">
+                <div class="field">
+                  <label for="contact">联系方式</label>
+                  <input id="contact" name="contact" placeholder="微信 / 手机 / 邮箱">
+                </div>
+                <div class="field">
+                  <label for="uploadNote">备注</label>
+                  <textarea id="uploadNote" name="note" placeholder="例如：唱的是副歌第二遍"></textarea>
+                </div>
+                <div class="field">
+                  <label>选择歌词</label>
+                  <div class="choice-list" id="uploadChoices"></div>
+                </div>
+                <label class="dropzone">
+                  <input id="videoFiles" type="file" multiple accept="video/*" required>
+                  <span>选择或拖入视频文件</span>
+                  <small>提交后进入待整理</small>
+                </label>
+                <button class="primary" type="submit">提交上传</button>
+                <span class="status-text" id="uploadStatus"></span>
+              </form>
+            </article>
+
+            <article class="panel">
+              <header class="panel-header">
+                <h2>我的视频</h2>
+                <span id="uploaderVideoCount">0 个视频</span>
+              </header>
+              <div class="queue" id="uploaderVideoList"></div>
+            </article>
+          </section>
+        </section>
+      </section>
+
+      <section class="page" id="adminPage" data-page="admin" hidden>
+        <section class="topbar">
+          <div>
+            <h1>管理后台</h1>
+            <p class="lede">管理员姓名为 raccoon。</p>
+          </div>
+          <div class="toolbar">
+            <button type="button" data-action="reload">刷新</button>
+            <a class="button" href="/">查看总览</a>
+          </div>
+        </section>
+
+        <article class="panel login-panel" id="adminLoginPanel">
+          <header class="panel-header">
+            <h2>管理员登录</h2>
+            <span>无需密码</span>
+          </header>
+          <form class="form login-form" id="adminLoginForm">
+            <div class="field">
+              <label for="adminNameInput">姓名</label>
+              <input id="adminNameInput" name="name" autocomplete="name" required>
+            </div>
+            <button class="primary" type="submit">进入管理后台</button>
+            <span class="status-text" id="adminLoginStatus"></span>
+          </form>
+        </article>
+
+        <section id="adminDashboard" hidden>
+          <section class="stats" aria-label="后台统计">
+            <div class="stat"><span>歌词句子</span><strong id="adminStatLyrics">0</strong></div>
+            <div class="stat"><span>全部有效视频</span><strong id="adminStatVideos">0</strong></div>
+            <div class="stat"><span>参与人数</span><strong id="adminStatPeople">0</strong></div>
+            <div class="stat"><span>待处理</span><strong id="adminStatPending">0</strong></div>
+          </section>
+
+          <section class="workbench admin-workbench">
+            <article class="panel">
+              <header class="panel-header">
+                <h2>歌词进度</h2>
+                <span>含待整理</span>
+              </header>
+              <div class="lyric-list" id="adminLyricList"></div>
+            </article>
+
+            <article class="panel">
+              <header class="panel-header">
+                <h2>句子详情</h2>
+                <span id="adminDetailCount">0 个视频</span>
+              </header>
+              <div class="detail">
+                <div class="detail-title">
+                  <h2 id="adminDetailLyric">加载中</h2>
+                  <span class="badge" id="adminDetailStatus">-</span>
+                </div>
+                <div class="edit-box">
+                  <textarea id="adminLyricEditor" aria-label="歌词文本编辑"></textarea>
+                  <div class="toolbar">
+                    <button type="button" data-action="save-lyric">保存文字修改</button>
+                  </div>
+                  <span class="status-text" id="editStatus"></span>
+                </div>
+                <div class="video-grid" id="adminVideoGrid"></div>
+              </div>
+            </article>
+          </section>
+
+          <section class="footer-grid" id="adminQueues">
+            <article class="panel">
+              <header class="panel-header">
+                <h2>待整理视频</h2>
+                <span>管理员确认后公开</span>
+              </header>
+              <div class="queue" id="pendingQueue"></div>
+            </article>
+
+            <article class="panel" id="relink">
+              <header class="panel-header">
+                <h2>Relink 暂存区</h2>
+                <span>歌词结构变化后处理</span>
+              </header>
+              <div class="queue" id="relinkQueue"></div>
+            </article>
+          </section>
+
+          <section class="panel structure-panel">
+            <header class="panel-header">
+              <h2>歌词结构编辑</h2>
+              <span>每行一句歌词</span>
+            </header>
+            <div class="structure-body">
+              <textarea id="structureEditor" aria-label="歌词结构编辑"></textarea>
+              <div class="toolbar">
+                <button type="button" data-action="save-structure">保存结构修改</button>
+              </div>
+              <p class="hint">结构保存会整体替换当前歌词，并把已有视频关联放入 Relink 暂存区。每一行会保存成一句歌词；普通错字和标点修改请用上方“保存文字修改”。</p>
+              <span class="status-text" id="structureStatus"></span>
+            </div>
+          </section>
+        </section>
       </section>
     </main>
   </div>

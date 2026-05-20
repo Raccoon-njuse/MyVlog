@@ -105,6 +105,36 @@ button.danger {
   background: var(--green);
 }
 
+.session-card {
+  display: grid;
+  gap: 6px;
+  margin-top: 22px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.session-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.session-card strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.text-button {
+  min-height: auto;
+  justify-content: flex-start;
+  padding: 0;
+  border: 0;
+  color: var(--green);
+  background: transparent;
+  font-size: 13px;
+}
+
 .main {
   padding: 24px;
 }
@@ -167,6 +197,18 @@ h1 {
 .workbench {
   display: grid;
   grid-template-columns: minmax(260px, 0.95fr) minmax(360px, 1.35fr) minmax(260px, 0.85fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.public-workbench,
+.admin-workbench {
+  grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.4fr);
+}
+
+.uploader-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.85fr) minmax(360px, 1.15fr);
   gap: 14px;
   align-items: start;
 }
@@ -275,6 +317,12 @@ h1 {
   border-color: rgba(154, 59, 53, 0.28);
   color: var(--red);
   background: #fbefee;
+}
+
+.badge.danger {
+  border-color: rgba(95, 83, 72, 0.24);
+  color: #5f5348;
+  background: #f6f1ed;
 }
 
 .detail {
@@ -440,10 +488,32 @@ h1 {
   line-height: 1.45;
 }
 
+.queue-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: start;
+}
+
 .queue-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.mini-list {
+  display: grid;
+  gap: 6px;
+}
+
+.mini-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .footer-grid {
@@ -481,7 +551,8 @@ h1 {
 }
 
 @media (max-width: 1180px) {
-  .workbench {
+  .workbench,
+  .uploader-grid {
     grid-template-columns: 1fr;
   }
 

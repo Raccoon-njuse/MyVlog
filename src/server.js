@@ -20,6 +20,7 @@ const uploadDir = path.isAbsolute(configuredUploadDir)
   : path.join(projectRoot, configuredUploadDir);
 const uploadUrlPrefix = "/storage/videos";
 const port = Number(process.env.PORT || 3000);
+const adminUserName = String(process.env.ADMIN_NAME || "raccoon").toLowerCase();
 
 fsSync.mkdirSync(uploadDir, { recursive: true });
 
@@ -116,8 +117,52 @@ function mapLinkId(link) {
   return link.id;
 }
 
-// 获取公开总览页需要的歌词、视频、统计和待办数据。
-async function getOverviewData() {
+// 从请求里读取当前用户姓名。当前版本按用户输入姓名识别角色，不做密码校验。
+function getRequestUserName(request) {
+  return normalizeText(request.get("x-user-name") || request.query.name || request.body?.name);
+}
+
+// 判断当前姓名是否拥有管理员页面权限。
+function isAdminName(name) {
+  return normalizeText(name).toLowerCase() === adminUserName;
+}
+
+// 保护管理员接口，避免访客和普通上传者直接执行整理操作。
+function requireAdmin(request, response, next) {
+  if (!isAdminName(getRequestUserName(request))) {
+    response.status(403).json({ error: "只有管理员 raccoon 可以访问这个接口" });
+    return;
+  }
+  next();
+}
+
+// 获取总览页需要的歌词、视频、统计和待办数据。公开视图只展示已审核并激活的覆盖关系。
+async function getOverviewData(options = {}) {
+  const publicOnly = options.publicOnly === true;
+  const linkStatusCondition = publicOnly
+    ? "video_lyric_links.status = 'active'"
+    : "video_lyric_links.status IN ('pending', 'active')";
+  const videoStatusCondition = publicOnly
+    ? "videos.status = 'reviewed'"
+    : "videos.status NOT IN ('rejected', 'archived')";
+  const statsSql = publicOnly
+    ? `
+      SELECT
+        (SELECT count(*) FROM lyric_units WHERE is_active = true)::int AS lyric_count,
+        (SELECT count(*) FROM videos WHERE status = 'reviewed')::int AS video_count,
+        (SELECT count(DISTINCT person_id) FROM videos WHERE status = 'reviewed')::int AS person_count,
+        0::int AS pending_count
+    `
+    : `
+      SELECT
+        (SELECT count(*) FROM lyric_units WHERE is_active = true)::int AS lyric_count,
+        (SELECT count(*) FROM videos WHERE status NOT IN ('rejected', 'archived'))::int AS video_count,
+        (SELECT count(DISTINCT person_id) FROM videos WHERE status NOT IN ('rejected', 'archived'))::int AS person_count,
+        (
+          (SELECT count(*) FROM videos WHERE status = 'uploaded')
+          + (SELECT count(*) FROM relink_tasks WHERE status = 'pending')
+        )::int AS pending_count
+    `;
   const lyricsPromise = query(`
     SELECT
       lyric_units.id::text,
@@ -143,10 +188,10 @@ async function getOverviewData() {
     FROM lyric_units
     LEFT JOIN video_lyric_links
       ON video_lyric_links.lyric_unit_id = lyric_units.id
-      AND video_lyric_links.status IN ('pending', 'active')
+      AND ${linkStatusCondition}
     LEFT JOIN videos
       ON videos.id = video_lyric_links.video_id
-      AND videos.status NOT IN ('rejected', 'archived')
+      AND ${videoStatusCondition}
     LEFT JOIN persons
       ON persons.id = videos.person_id
     WHERE lyric_units.is_active = true
@@ -154,18 +199,9 @@ async function getOverviewData() {
     ORDER BY lyric_units.order_index ASC
   `);
 
-  const statsPromise = query(`
-    SELECT
-      (SELECT count(*) FROM lyric_units WHERE is_active = true)::int AS lyric_count,
-      (SELECT count(*) FROM videos WHERE status NOT IN ('rejected', 'archived'))::int AS video_count,
-      (SELECT count(DISTINCT person_id) FROM videos WHERE status NOT IN ('rejected', 'archived'))::int AS person_count,
-      (
-        (SELECT count(*) FROM videos WHERE status = 'uploaded')
-        + (SELECT count(*) FROM relink_tasks WHERE status = 'pending')
-      )::int AS pending_count
-  `);
+  const statsPromise = query(statsSql);
 
-  const pendingVideosPromise = query(`
+  const pendingVideosPromise = publicOnly ? Promise.resolve({ rows: [] }) : query(`
     SELECT
       videos.id::text,
       videos.original_filename,
@@ -194,7 +230,7 @@ async function getOverviewData() {
     ORDER BY videos.created_at DESC
   `);
 
-  const relinkTasksPromise = query(`
+  const relinkTasksPromise = publicOnly ? Promise.resolve({ rows: [] }) : query(`
     SELECT
       relink_tasks.id::text,
       relink_tasks.video_id::text,
@@ -232,10 +268,98 @@ async function getOverviewData() {
   };
 }
 
-// 返回总览数据。
-async function handleGetOverview(_request, response, next) {
+// 获取某个上传者自己的视频列表。
+async function getUploaderData(name) {
+  const videosPromise = query(
+    `
+      SELECT
+        videos.id::text,
+        videos.original_filename,
+        videos.file_url,
+        videos.status,
+        videos.created_at,
+        videos.updated_at,
+        persons.display_name AS person_name,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'linkId', video_lyric_links.id::text,
+              'lyricId', lyric_units.id::text,
+              'orderIndex', lyric_units.order_index,
+              'lyricText', lyric_units.text,
+              'status', video_lyric_links.status
+            )
+            ORDER BY lyric_units.order_index
+          ) FILTER (WHERE video_lyric_links.id IS NOT NULL),
+          '[]'::json
+        ) AS lyric_links
+      FROM videos
+      JOIN persons ON persons.id = videos.person_id
+      LEFT JOIN video_lyric_links ON video_lyric_links.video_id = videos.id
+      LEFT JOIN lyric_units ON lyric_units.id = video_lyric_links.lyric_unit_id
+      WHERE lower(persons.name) = lower($1)
+        OR lower(persons.display_name) = lower($1)
+      GROUP BY videos.id, persons.display_name
+      ORDER BY videos.created_at DESC
+    `,
+    [name]
+  );
+
+  const statsPromise = query(
+    `
+      SELECT
+        count(*)::int AS total_count,
+        count(*) FILTER (WHERE videos.status = 'uploaded')::int AS pending_count,
+        count(*) FILTER (WHERE videos.status = 'reviewed')::int AS reviewed_count,
+        count(*) FILTER (WHERE videos.status = 'rejected')::int AS rejected_count
+      FROM videos
+      JOIN persons ON persons.id = videos.person_id
+      WHERE lower(persons.name) = lower($1)
+        OR lower(persons.display_name) = lower($1)
+    `,
+    [name]
+  );
+
+  const results = await Promise.all([videosPromise, statsPromise]);
+  return {
+    userName: name,
+    videos: results[0].rows,
+    stats: {
+      totalCount: results[1].rows[0].total_count,
+      pendingCount: results[1].rows[0].pending_count,
+      reviewedCount: results[1].rows[0].reviewed_count,
+      rejectedCount: results[1].rows[0].rejected_count
+    }
+  };
+}
+
+// 返回访客总览数据。
+async function handleGetPublicOverview(_request, response, next) {
+  try {
+    response.json(await getOverviewData({ publicOnly: true }));
+  } catch (error) {
+    next(error);
+  }
+}
+
+// 返回管理员总览数据。
+async function handleGetAdminOverview(_request, response, next) {
   try {
     response.json(await getOverviewData());
+  } catch (error) {
+    next(error);
+  }
+}
+
+// 返回当前上传者自己的视频数据。
+async function handleGetUploaderData(request, response, next) {
+  try {
+    const name = getRequestUserName(request);
+    if (!name) {
+      response.status(401).json({ error: "请先输入姓名登录" });
+      return;
+    }
+    response.json(await getUploaderData(name));
   } catch (error) {
     next(error);
   }
@@ -693,14 +817,22 @@ async function handleSigterm() {
   process.exit(0);
 }
 
-app.get("/api/overview", handleGetOverview);
+app.get("/api/overview", handleGetPublicOverview);
+app.get("/api/uploader/me", handleGetUploaderData);
+app.get("/api/admin/overview", requireAdmin, handleGetAdminOverview);
 app.post("/api/uploads", upload.array("videos", 8), handleCreateUpload);
-app.put("/api/lyrics/structure", handleReplaceLyricStructure);
-app.patch("/api/lyrics/:id", handleUpdateLyric);
-app.post("/api/videos/:id/review", handleReviewVideo);
-app.post("/api/videos/:id/reject", handleRejectVideo);
-app.post("/api/relink-tasks/:id/resolve", handleResolveRelinkTask);
-app.post("/api/relink-tasks/:id/ignore", handleIgnoreRelinkTask);
+app.put("/api/admin/lyrics/structure", requireAdmin, handleReplaceLyricStructure);
+app.patch("/api/admin/lyrics/:id", requireAdmin, handleUpdateLyric);
+app.post("/api/admin/videos/:id/review", requireAdmin, handleReviewVideo);
+app.post("/api/admin/videos/:id/reject", requireAdmin, handleRejectVideo);
+app.post("/api/admin/relink-tasks/:id/resolve", requireAdmin, handleResolveRelinkTask);
+app.post("/api/admin/relink-tasks/:id/ignore", requireAdmin, handleIgnoreRelinkTask);
+app.put("/api/lyrics/structure", requireAdmin, handleReplaceLyricStructure);
+app.patch("/api/lyrics/:id", requireAdmin, handleUpdateLyric);
+app.post("/api/videos/:id/review", requireAdmin, handleReviewVideo);
+app.post("/api/videos/:id/reject", requireAdmin, handleRejectVideo);
+app.post("/api/relink-tasks/:id/resolve", requireAdmin, handleResolveRelinkTask);
+app.post("/api/relink-tasks/:id/ignore", requireAdmin, handleIgnoreRelinkTask);
 app.use("/api", handleApiNotFound);
 app.get("*", handleIndexFallback);
 app.use(handleError);
