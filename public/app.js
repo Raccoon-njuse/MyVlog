@@ -20,7 +20,8 @@ const state = {
     reviewedCount: 0,
     rejectedCount: 0
   },
-  activeLyricId: null
+  activeLyricId: null,
+  expandedUploaderLyricId: null
 };
 
 let videoPreviewObserver = null;
@@ -238,7 +239,7 @@ function prepareVideoPreviews() {
 function withUserHeaders(options = {}) {
   const headers = new Headers(options.headers || {});
   if (state.sessionName) {
-    headers.set("X-User-Name", state.sessionName);
+    headers.set("X-User-Name", encodeURIComponent(state.sessionName));
   }
   return {
     ...options,
@@ -358,6 +359,9 @@ async function refreshCurrentView() {
 
 // 渲染整体外壳、导航和姓名状态。
 function renderShell() {
+  document.body.dataset.view = state.view;
+  document.body.classList.toggle("mobile-role-view", state.view !== "admin");
+
   const pages = findAll("[data-page]");
   for (let i = 0; i < pages.length; i += 1) {
     pages[i].hidden = pages[i].dataset.page !== state.view;
@@ -375,6 +379,7 @@ function renderShell() {
 
   find("#uploaderNameInput").value = state.sessionName;
   find("#adminNameInput").value = state.sessionName;
+  find("#quickLoginName").value = state.sessionName;
 }
 
 // 渲染所有当前页面区域。
@@ -404,6 +409,21 @@ function countMissingLyrics() {
     }
   }
   return count;
+}
+
+// 取出当前上传者在某句歌词下的视频和对应关联。
+function getUploaderVideosForLyric(lyricId) {
+  const matches = [];
+  for (let i = 0; i < state.uploaderVideos.length; i += 1) {
+    const video = state.uploaderVideos[i];
+    const links = video.lyric_links || [];
+    for (let j = 0; j < links.length; j += 1) {
+      if (links[j].lyricId === lyricId) {
+        matches.push({ video, link: links[j] });
+      }
+    }
+  }
+  return matches;
 }
 
 // 按状态返回徽标样式。
@@ -446,6 +466,72 @@ function renderLyricRow(lyric) {
   `;
 }
 
+// 渲染访客移动端歌词行，只保留公开视频数量。
+function renderVisitorLyricRow(lyric) {
+  const count = countVideosForLyric(lyric);
+  const countClass = count === 0 ? " zero" : "";
+  return `
+    <div class="mobile-lyric-row">
+      <span class="mobile-index">${escapeHtml(lyric.orderIndex)}</span>
+      <span class="mobile-lyric-text">${escapeHtml(lyric.text)}</span>
+      <span class="mobile-count${countClass}">${count}</span>
+    </div>
+  `;
+}
+
+// 渲染上传者自己的行内视频。
+function renderInlineUploaderVideo(match) {
+  const video = match.video;
+  return `
+    <article class="inline-video-card">
+      <video
+        controls
+        playsinline
+        preload="none"
+        data-video-preview
+        data-video-id="${escapeHtml(video.id)}"
+        data-video-title="${escapeHtml(video.original_filename)}"
+        data-src="${escapeHtml(video.file_url)}"
+      ></video>
+      <div>
+        <strong>${escapeHtml(video.original_filename)}</strong>
+        <span>${escapeHtml(videoStatusLabels[video.status] || video.status)} · ${escapeHtml(linkStatusLabels[match.link.status] || match.link.status)}</span>
+      </div>
+    </article>
+  `;
+}
+
+// 渲染上传者移动端歌词行，标注自己已上传的歌词。
+function renderUploaderLyricRow(lyric) {
+  const publicCount = countVideosForLyric(lyric);
+  const ownMatches = getUploaderVideosForLyric(lyric.id);
+  const expanded = lyric.id === state.expandedUploaderLyricId;
+  const countClass = publicCount === 0 ? " zero" : "";
+  const marker = ownMatches.length > 0
+    ? `<span class="my-marker">我的 ${ownMatches.length}</span>`
+    : "";
+  let videosHtml = "";
+  if (expanded) {
+    for (let i = 0; i < ownMatches.length; i += 1) {
+      videosHtml += renderInlineUploaderVideo(ownMatches[i]);
+    }
+    if (!videosHtml) {
+      videosHtml = '<div class="inline-empty">还没有上传这一句。</div>';
+    }
+  }
+  return `
+    <div class="mobile-row-block${expanded ? " expanded" : ""}">
+      <button type="button" class="mobile-lyric-row" data-action="select-lyric" data-id="${escapeHtml(lyric.id)}">
+        <span class="mobile-index">${escapeHtml(lyric.orderIndex)}</span>
+        <span class="mobile-lyric-text">${escapeHtml(lyric.text)}</span>
+        ${marker}
+        <span class="mobile-count${countClass}">${publicCount}</span>
+      </button>
+      ${expanded ? `<div class="inline-video-list">${videosHtml}</div>` : ""}
+    </div>
+  `;
+}
+
 // 渲染歌词进度列表。
 function renderLyricList(selector) {
   const list = find(selector);
@@ -454,6 +540,24 @@ function renderLyricList(selector) {
     html += renderLyricRow(state.lyrics[i]);
   }
   list.innerHTML = html || '<div class="queue"><div class="queue-item"><strong>暂无歌词</strong><p>请先初始化数据库。</p></div></div>';
+}
+
+// 渲染移动端访客歌词列表。
+function renderVisitorLyricList() {
+  let html = "";
+  for (let i = 0; i < state.lyrics.length; i += 1) {
+    html += renderVisitorLyricRow(state.lyrics[i]);
+  }
+  find("#visitorLyricList").innerHTML = html || '<div class="inline-empty">暂无歌词。</div>';
+}
+
+// 渲染移动端上传者歌词列表。
+function renderUploaderLyricList() {
+  let html = "";
+  for (let i = 0; i < state.lyrics.length; i += 1) {
+    html += renderUploaderLyricRow(state.lyrics[i]);
+  }
+  find("#uploaderLyricList").innerHTML = html || '<div class="inline-empty">暂无歌词。</div>';
 }
 
 // 渲染视频卡片。
@@ -511,12 +615,8 @@ function renderDetail(prefix, options = {}) {
 
 // 渲染访客页。
 function renderVisitorPage() {
-  find("#visitorStatLyrics").textContent = state.stats.lyricCount;
-  find("#visitorStatVideos").textContent = state.stats.videoCount;
-  find("#visitorStatPeople").textContent = state.stats.personCount;
-  find("#visitorStatMissing").textContent = countMissingLyrics();
-  renderLyricList("#visitorLyricList");
-  renderDetail("visitor");
+  find("#visitorSummary").textContent = `${state.stats.lyricCount} 句歌词 · ${state.stats.videoCount} 个视频 · ${countMissingLyrics()} 句待补`;
+  renderVisitorLyricList();
 }
 
 // 渲染上传表单里的歌词多选项。
@@ -545,14 +645,10 @@ function renderUploaderPage() {
     return;
   }
 
-  find("#uploadIdentity").textContent = `以 ${state.sessionName} 身份上传`;
-  find("#uploaderStatTotal").textContent = state.uploaderStats.totalCount;
-  find("#uploaderStatPending").textContent = state.uploaderStats.pendingCount;
-  find("#uploaderStatReviewed").textContent = state.uploaderStats.reviewedCount;
-  find("#uploaderStatRejected").textContent = state.uploaderStats.rejectedCount;
-  find("#uploaderVideoCount").textContent = `${state.uploaderVideos.length} 个视频`;
+  find("#uploadIdentity").textContent = state.sessionName;
+  find("#uploaderSummary").textContent = `${state.uploaderStats.totalCount} 个我的视频 · ${state.uploaderStats.pendingCount} 个待整理`;
   renderUploadChoices();
-  renderUploaderVideos();
+  renderUploaderLyricList();
 }
 
 // 渲染上传者自己的歌词摘要。
@@ -693,10 +789,9 @@ function renderStructureEditor() {
 function renderPageError(error) {
   const message = escapeHtml(error.message);
   if (state.view === "visitor") {
-    find("#visitorDetailLyric").textContent = "加载失败";
-    find("#visitorVideoGrid").innerHTML = `<div class="queue-item"><strong>无法连接后端</strong><p>${message}</p></div>`;
+    find("#visitorLyricList").innerHTML = `<div class="inline-empty">无法连接后端：${message}</div>`;
   } else if (state.view === "uploader") {
-    find("#uploaderVideoList").innerHTML = `<div class="queue-item"><strong>加载失败</strong><p>${message}</p></div>`;
+    find("#uploaderLyricList").innerHTML = `<div class="inline-empty">加载失败：${message}</div>`;
   } else if (state.view === "admin" && isAdminSession()) {
     find("#pendingQueue").innerHTML = `<div class="queue-item"><strong>加载失败</strong><p>${message}</p></div>`;
   } else {
@@ -810,7 +905,7 @@ function appendSelectedFiles(formData) {
 async function handleUploadSubmit(event) {
   event.preventDefault();
   if (!state.sessionName) {
-    window.alert("请先输入姓名登录");
+    openLoginSheet();
     return;
   }
 
@@ -836,7 +931,35 @@ async function handleUploadSubmit(event) {
   find("#uploadForm").reset();
   await loadPublicOverview();
   await loadUploaderData();
+  closeUploadSheet();
   renderAll();
+}
+
+// 打开姓名输入抽屉。
+function openLoginSheet() {
+  find("#loginSheet").hidden = false;
+  find("#quickLoginName").value = state.sessionName;
+  find("#quickLoginName").focus();
+}
+
+// 关闭姓名输入抽屉。
+function closeLoginSheet() {
+  find("#loginSheet").hidden = true;
+}
+
+// 打开上传抽屉；未登录时先要求输入姓名。
+function openUploadSheet() {
+  if (!state.sessionName) {
+    openLoginSheet();
+    return;
+  }
+  renderUploadChoices();
+  find("#uploadSheet").hidden = false;
+}
+
+// 关闭上传抽屉。
+function closeUploadSheet() {
+  find("#uploadSheet").hidden = true;
 }
 
 // 保存姓名并刷新当前页面。
@@ -848,6 +971,15 @@ async function loginWithName(name) {
   }
   state.sessionName = normalized;
   window.localStorage.setItem(SESSION_KEY, normalized);
+  closeLoginSheet();
+  if (normalized.toLowerCase() === ADMIN_NAME && state.view !== "admin") {
+    window.location.assign("/admin");
+    return;
+  }
+  if (state.view === "visitor") {
+    window.location.assign("/uploader");
+    return;
+  }
   await refreshCurrentView();
 }
 
@@ -861,6 +993,7 @@ async function logout() {
     reviewedCount: 0,
     rejectedCount: 0
   };
+  state.expandedUploaderLyricId = null;
   window.localStorage.removeItem(SESSION_KEY);
   await refreshCurrentView();
 }
@@ -874,6 +1007,14 @@ async function handleDocumentClick(event) {
 
   const action = target.dataset.action;
   if (action === "select-lyric") {
+    if (state.view === "uploader") {
+      state.activeLyricId = target.dataset.id;
+      state.expandedUploaderLyricId = state.expandedUploaderLyricId === target.dataset.id
+        ? null
+        : target.dataset.id;
+      renderAll();
+      return;
+    }
     state.activeLyricId = target.dataset.id;
     renderAll();
     return;
@@ -884,6 +1025,14 @@ async function handleDocumentClick(event) {
       await refreshCurrentView();
     } else if (action === "logout") {
       await logout();
+    } else if (action === "open-login") {
+      openLoginSheet();
+    } else if (action === "close-login") {
+      closeLoginSheet();
+    } else if (action === "open-upload") {
+      openUploadSheet();
+    } else if (action === "close-upload") {
+      closeUploadSheet();
     } else if (action === "save-lyric") {
       await saveCurrentLyric();
     } else if (action === "save-structure") {
@@ -914,11 +1063,18 @@ async function handleAdminLogin(event) {
   await loginWithName(find("#adminNameInput").value);
 }
 
+// 处理访客浮动按钮打开的姓名输入。
+async function handleQuickLogin(event) {
+  event.preventDefault();
+  await loginWithName(find("#quickLoginName").value);
+}
+
 // 绑定页面事件。
 function bindEvents() {
   document.addEventListener("click", handleDocumentClick);
   find("#uploaderLoginForm").addEventListener("submit", handleUploaderLogin);
   find("#adminLoginForm").addEventListener("submit", handleAdminLogin);
+  find("#quickLoginForm").addEventListener("submit", handleQuickLogin);
   find("#uploadForm").addEventListener("submit", handleUploadSubmit);
 }
 

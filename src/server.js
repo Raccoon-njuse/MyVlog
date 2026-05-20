@@ -117,9 +117,22 @@ function mapLinkId(link) {
   return link.id;
 }
 
+// 解码请求头里的姓名，支持中文姓名通过 URL 编码传输。
+function decodeUserName(value) {
+  const text = normalizeText(value);
+  if (!text) {
+    return "";
+  }
+  try {
+    return decodeURIComponent(text);
+  } catch (_error) {
+    return text;
+  }
+}
+
 // 从请求里读取当前用户姓名。当前版本按用户输入姓名识别角色，不做密码校验。
 function getRequestUserName(request) {
-  return normalizeText(request.get("x-user-name") || request.query.name || request.body?.name);
+  return decodeUserName(request.get("x-user-name") || request.query.name || request.body?.name);
 }
 
 // 判断当前姓名是否拥有管理员页面权限。

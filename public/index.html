@@ -27,120 +27,46 @@
     </aside>
 
     <main class="main">
-      <section class="page" id="visitorPage" data-page="visitor">
-        <section class="topbar">
-          <div>
-            <h1>歌词和视频覆盖情况</h1>
-            <p class="lede">访客可查看已公开的视频素材覆盖进度。</p>
-          </div>
-          <div class="toolbar">
-            <button type="button" data-action="reload">刷新</button>
-            <a class="button primary" href="/uploader">上传我的视频</a>
-          </div>
-        </section>
-
-        <section class="stats" aria-label="公开收集统计">
-          <div class="stat"><span>歌词句子</span><strong id="visitorStatLyrics">0</strong></div>
-          <div class="stat"><span>公开视频</span><strong id="visitorStatVideos">0</strong></div>
-          <div class="stat"><span>参与人数</span><strong id="visitorStatPeople">0</strong></div>
-          <div class="stat"><span>待补句子</span><strong id="visitorStatMissing">0</strong></div>
-        </section>
-
-        <section class="workbench public-workbench" id="overview">
-          <article class="panel">
-            <header class="panel-header">
-              <h2>歌词进度</h2>
-              <span>逐句统计</span>
-            </header>
-            <div class="lyric-list" id="visitorLyricList"></div>
-          </article>
-
-          <article class="panel">
-            <header class="panel-header">
-              <h2>句子详情</h2>
-              <span id="visitorDetailCount">0 个视频</span>
-            </header>
-            <div class="detail">
-              <div class="detail-title">
-                <h2 id="visitorDetailLyric">加载中</h2>
-                <span class="badge" id="visitorDetailStatus">-</span>
-              </div>
-              <div class="video-grid" id="visitorVideoGrid"></div>
+      <section class="page mobile-page" id="visitorPage" data-page="visitor">
+        <section class="mobile-screen">
+          <header class="mobile-header">
+            <div>
+              <span class="mobile-brand">友谊地久天长</span>
+              <h1>歌词覆盖</h1>
             </div>
-          </article>
+            <button type="button" class="icon-button" data-action="reload" aria-label="刷新">↻</button>
+          </header>
+          <div class="mobile-summary" id="visitorSummary">0 句歌词 · 0 个视频</div>
+          <div class="mobile-lyric-list" id="visitorLyricList"></div>
+          <button class="mobile-fab" type="button" data-action="open-login" aria-label="输入姓名上传">+</button>
         </section>
       </section>
 
-      <section class="page" id="uploaderPage" data-page="uploader" hidden>
-        <section class="topbar">
-          <div>
-            <h1>我的上传</h1>
-            <p class="lede">输入姓名后上传素材，并查看这个姓名下的视频状态。</p>
-          </div>
-          <div class="toolbar">
-            <button type="button" data-action="reload">刷新</button>
-            <a class="button" href="/">查看总览</a>
-          </div>
-        </section>
-
-        <article class="panel login-panel" id="uploaderLoginPanel">
-          <header class="panel-header">
-            <h2>上传者登录</h2>
-            <span>无需密码</span>
+      <section class="page mobile-page" id="uploaderPage" data-page="uploader" hidden>
+        <section class="mobile-screen">
+          <header class="mobile-header">
+            <div>
+              <span class="mobile-brand" id="uploadIdentity">未登录</span>
+              <h1>我的歌词</h1>
+            </div>
+            <div class="mobile-actions">
+              <button type="button" class="icon-button" data-action="reload" aria-label="刷新">↻</button>
+              <button type="button" class="icon-button" data-action="logout" aria-label="清除姓名">×</button>
+            </div>
           </header>
-          <form class="form login-form" id="uploaderLoginForm">
-            <div class="field">
+
+          <article class="mobile-login-card" id="uploaderLoginPanel">
+            <form class="login-form" id="uploaderLoginForm">
               <label for="uploaderNameInput">姓名</label>
               <input id="uploaderNameInput" name="name" autocomplete="name" required>
-            </div>
-            <button class="primary" type="submit">进入我的上传</button>
-          </form>
-        </article>
+              <button class="primary" type="submit">进入</button>
+            </form>
+          </article>
 
-        <section id="uploaderDashboard" hidden>
-          <section class="stats" aria-label="我的上传统计">
-            <div class="stat"><span>我的视频</span><strong id="uploaderStatTotal">0</strong></div>
-            <div class="stat"><span>待整理</span><strong id="uploaderStatPending">0</strong></div>
-            <div class="stat"><span>已公开</span><strong id="uploaderStatReviewed">0</strong></div>
-            <div class="stat"><span>已驳回</span><strong id="uploaderStatRejected">0</strong></div>
-          </section>
-
-          <section class="uploader-grid">
-            <article class="panel">
-              <header class="panel-header">
-                <h2>上传素材</h2>
-                <span id="uploadIdentity">未登录</span>
-              </header>
-              <form class="form" id="uploadForm">
-                <div class="field">
-                  <label for="contact">联系方式</label>
-                  <input id="contact" name="contact" placeholder="微信 / 手机 / 邮箱">
-                </div>
-                <div class="field">
-                  <label for="uploadNote">备注</label>
-                  <textarea id="uploadNote" name="note" placeholder="例如：唱的是副歌第二遍"></textarea>
-                </div>
-                <div class="field">
-                  <label>选择歌词</label>
-                  <div class="choice-list" id="uploadChoices"></div>
-                </div>
-                <label class="dropzone">
-                  <input id="videoFiles" type="file" multiple accept="video/*" required>
-                  <span>选择或拖入视频文件</span>
-                  <small>提交后进入待整理</small>
-                </label>
-                <button class="primary" type="submit">提交上传</button>
-                <span class="status-text" id="uploadStatus"></span>
-              </form>
-            </article>
-
-            <article class="panel">
-              <header class="panel-header">
-                <h2>我的视频</h2>
-                <span id="uploaderVideoCount">0 个视频</span>
-              </header>
-              <div class="queue" id="uploaderVideoList"></div>
-            </article>
+          <section id="uploaderDashboard" hidden>
+            <div class="mobile-summary" id="uploaderSummary">0 个我的视频</div>
+            <div class="mobile-lyric-list" id="uploaderLyricList"></div>
+            <button class="mobile-fab" type="button" data-action="open-upload" aria-label="上传视频">+</button>
           </section>
         </section>
       </section>
@@ -246,6 +172,50 @@
         </section>
       </section>
     </main>
+  </div>
+
+  <div class="sheet-backdrop" id="loginSheet" hidden>
+    <section class="bottom-sheet" role="dialog" aria-modal="true" aria-labelledby="loginSheetTitle">
+      <header class="sheet-header">
+        <h2 id="loginSheetTitle">输入姓名</h2>
+        <button type="button" class="icon-button" data-action="close-login" aria-label="关闭">×</button>
+      </header>
+      <form class="sheet-form" id="quickLoginForm">
+        <label for="quickLoginName">姓名</label>
+        <input id="quickLoginName" name="name" autocomplete="name" required>
+        <button class="primary" type="submit">进入</button>
+      </form>
+    </section>
+  </div>
+
+  <div class="sheet-backdrop" id="uploadSheet" hidden>
+    <section class="bottom-sheet upload-sheet" role="dialog" aria-modal="true" aria-labelledby="uploadSheetTitle">
+      <header class="sheet-header">
+        <h2 id="uploadSheetTitle">上传视频</h2>
+        <button type="button" class="icon-button" data-action="close-upload" aria-label="关闭">×</button>
+      </header>
+      <form class="form" id="uploadForm">
+        <div class="field">
+          <label for="contact">联系方式</label>
+          <input id="contact" name="contact" placeholder="微信 / 手机 / 邮箱">
+        </div>
+        <div class="field">
+          <label for="uploadNote">备注</label>
+          <textarea id="uploadNote" name="note" placeholder="例如：唱的是副歌第二遍"></textarea>
+        </div>
+        <div class="field">
+          <label>选择歌词</label>
+          <div class="choice-list" id="uploadChoices"></div>
+        </div>
+        <label class="dropzone">
+          <input id="videoFiles" type="file" multiple accept="video/*" required>
+          <span>选择或拖入视频文件</span>
+          <small>提交后进入待整理</small>
+        </label>
+        <button class="primary" type="submit">提交上传</button>
+        <span class="status-text" id="uploadStatus"></span>
+      </form>
+    </section>
   </div>
 
   <script src="/app.js"></script>
