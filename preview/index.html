@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>友谊地久天长素材收集预览</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f6f5e'/%3E%3Cpath d='M9 17c4-6 10-6 14 0' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='12' r='2' fill='white'/%3E%3Ccircle cx='20' cy='12' r='2' fill='white'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      --bg: #f7f8f5;
+      --surface: #ffffff;
+      --surface-muted: #f0f3ef;
+      --ink: #1f2a24;
+      --muted: #66736b;
+      --line: #d9dfd7;
+      --green: #2f6f5e;
+      --red: #9a3b35;
+      --gold: #b7872f;
+      --blue: #426f9d;
+      --shadow: 0 16px 40px rgba(31, 42, 36, 0.08);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background: var(--bg);
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px 12px;
+      color: var(--ink);
+      background: var(--surface);
+      cursor: pointer;
+    }
+
+    button.primary {
+      border-color: var(--green);
+      color: #ffffff;
+      background: var(--green);
+    }
+
+    button.ghost {
+      background: transparent;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 232px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      padding: 24px 18px;
+      border-right: 1px solid var(--line);
+      background: #ffffff;
+    }
+
+    .brand {
+      display: grid;
+      gap: 4px;
+      margin-bottom: 28px;
+    }
+
+    .brand strong {
+      font-size: 19px;
+      line-height: 1.25;
+    }
+
+    .brand span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .nav {
+      display: grid;
+      gap: 8px;
+    }
+
+    .nav a {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 38px;
+      padding: 0 10px;
+      border-radius: 8px;
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .nav a.active {
+      color: #ffffff;
+      background: var(--green);
+    }
+
+    .main {
+      padding: 24px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-start;
+      margin-bottom: 22px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(26px, 3.2vw, 40px);
+      line-height: 1.08;
+    }
+
+    .lede {
+      max-width: 680px;
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .stat {
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .stat strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 26px;
+    }
+
+    .workbench {
+      display: grid;
+      grid-template-columns: minmax(260px, 0.95fr) minmax(360px, 1.35fr) minmax(260px, 0.85fr);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-muted);
+    }
+
+    .panel-header h2 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .panel-header span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .lyric-list {
+      display: grid;
+      max-height: 680px;
+      overflow: auto;
+    }
+
+    .lyric-row {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 10px;
+      padding: 13px 14px;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
+      text-align: left;
+      background: #ffffff;
+    }
+
+    .lyric-row.active {
+      background: #eef6f2;
+      box-shadow: inset 4px 0 0 var(--green);
+    }
+
+    .lyric-index {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      color: #ffffff;
+      background: var(--green);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .lyric-main {
+      min-width: 0;
+    }
+
+    .lyric-text {
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+
+    .meta-line {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: #ffffff;
+      font-size: 12px;
+    }
+
+    .badge.good {
+      border-color: rgba(47, 111, 94, 0.28);
+      color: var(--green);
+      background: #eef6f2;
+    }
+
+    .badge.warn {
+      border-color: rgba(154, 59, 53, 0.28);
+      color: var(--red);
+      background: #fbefee;
+    }
+
+    .detail {
+      padding: 16px;
+    }
+
+    .detail-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      margin-bottom: 14px;
+    }
+
+    .detail-title h2 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.28;
+    }
+
+    .edit-box {
+      display: grid;
+      gap: 10px;
+      margin: 14px 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+    }
+
+    .edit-box textarea {
+      width: 100%;
+      min-height: 74px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      resize: vertical;
+      color: var(--ink);
+      background: #ffffff;
+    }
+
+    .video-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .video-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #ffffff;
+    }
+
+    .thumb {
+      position: relative;
+      display: grid;
+      place-items: center;
+      aspect-ratio: 16 / 10;
+      color: #ffffff;
+      background:
+        linear-gradient(135deg, rgba(47, 111, 94, 0.9), rgba(66, 111, 157, 0.78)),
+        repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.16) 0 8px, transparent 8px 16px);
+    }
+
+    .thumb.alt {
+      background:
+        linear-gradient(135deg, rgba(154, 59, 53, 0.88), rgba(183, 135, 47, 0.78)),
+        repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.14) 0 8px, transparent 8px 16px);
+    }
+
+    .play {
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border-radius: 999px;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.86);
+      font-weight: 800;
+    }
+
+    .video-body {
+      display: grid;
+      gap: 6px;
+      padding: 10px;
+    }
+
+    .video-body strong {
+      font-size: 14px;
+    }
+
+    .video-body span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .side-stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .form {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .field input,
+    .field textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      color: var(--ink);
+      background: #ffffff;
+    }
+
+    .choice-list {
+      display: grid;
+      gap: 8px;
+      max-height: 210px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .choice {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .dropzone {
+      display: grid;
+      gap: 5px;
+      padding: 18px;
+      border: 1px dashed var(--green);
+      border-radius: 8px;
+      color: var(--muted);
+      background: #eef6f2;
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .queue {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+    }
+
+    .queue-item {
+      display: grid;
+      gap: 7px;
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+    }
+
+    .queue-item strong {
+      font-size: 14px;
+    }
+
+    .queue-item p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .status-text {
+      min-height: 20px;
+      color: var(--green);
+      font-size: 13px;
+    }
+
+    @media (max-width: 1180px) {
+      .workbench {
+        grid-template-columns: 1fr;
+      }
+
+      .lyric-list {
+        max-height: 430px;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .app-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .topbar,
+      .detail-title {
+        flex-direction: column;
+      }
+
+      .stats,
+      .footer-grid,
+      .video-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .main {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <strong>友谊地久天长</strong>
+        <span>视频素材收集台</span>
+      </div>
+      <nav class="nav" aria-label="主导航">
+        <a class="active" href="#overview">收集总览 <span>8</span></a>
+        <a href="#upload">上传入口 <span>3</span></a>
+        <a href="#admin">整理后台 <span>4</span></a>
+        <a href="#relink">Relink 暂存 <span>2</span></a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <section class="topbar">
+        <div>
+          <h1>按歌词句子整理每个人的视频</h1>
+          <p class="lede">每个人可以上传多个片段，每个片段可以关联一句或多句歌词。歌词编辑后，结构受影响的视频进入暂存区，等待手动重新关联。</p>
+        </div>
+        <div class="toolbar">
+          <button class="ghost" type="button">导出清单</button>
+          <button class="primary" type="button">新增上传</button>
+        </div>
+      </section>
+
+      <section class="stats" aria-label="收集统计">
+        <div class="stat"><span>歌词句子</span><strong id="statLyrics">0</strong></div>
+        <div class="stat"><span>已收视频</span><strong id="statVideos">0</strong></div>
+        <div class="stat"><span>参与人数</span><strong id="statPeople">0</strong></div>
+        <div class="stat"><span>待处理</span><strong id="statPending">0</strong></div>
+      </section>
+
+      <section class="workbench" id="overview">
+        <article class="panel">
+          <header class="panel-header">
+            <h2>歌词进度</h2>
+            <span>逐句统计</span>
+          </header>
+          <div class="lyric-list" id="lyricList"></div>
+        </article>
+
+        <article class="panel">
+          <header class="panel-header">
+            <h2>句子详情</h2>
+            <span id="detailCount">0 个视频</span>
+          </header>
+          <div class="detail">
+            <div class="detail-title">
+              <h2 id="detailLyric">-</h2>
+              <span class="badge good" id="detailStatus">已收集</span>
+            </div>
+            <div class="edit-box">
+              <textarea id="lyricEditor" aria-label="歌词文本编辑"></textarea>
+              <div class="toolbar">
+                <button type="button" id="saveTextButton">保存文字修改</button>
+                <button type="button" class="ghost" id="structureButton">保存结构修改</button>
+              </div>
+              <span class="status-text" id="editStatus"></span>
+            </div>
+            <div class="video-grid" id="videoGrid"></div>
+          </div>
+        </article>
+
+        <aside class="side-stack" id="upload">
+          <article class="panel">
+            <header class="panel-header">
+              <h2>上传素材</h2>
+              <span>待整理</span>
+            </header>
+            <form class="form" id="uploadForm">
+              <div class="field">
+                <label for="personName">姓名</label>
+                <input id="personName" value="新参与者" autocomplete="name">
+              </div>
+              <div class="field">
+                <label for="contact">联系方式</label>
+                <input id="contact" placeholder="微信 / 手机 / 邮箱">
+              </div>
+              <div class="field">
+                <label>选择歌词</label>
+                <div class="choice-list" id="uploadChoices"></div>
+              </div>
+              <label class="dropzone">
+                <input type="file" multiple accept="video/*">
+                <span>选择或拖入视频文件</span>
+                <small>提交后进入待整理</small>
+              </label>
+              <button class="primary" type="submit">提交上传</button>
+              <span class="status-text" id="uploadStatus"></span>
+            </form>
+          </article>
+        </aside>
+      </section>
+
+      <section class="footer-grid" id="admin">
+        <article class="panel">
+          <header class="panel-header">
+            <h2>待整理视频</h2>
+            <span>管理员确认后公开</span>
+          </header>
+          <div class="queue" id="pendingQueue"></div>
+        </article>
+
+        <article class="panel" id="relink">
+          <header class="panel-header">
+            <h2>Relink 暂存区</h2>
+            <span>歌词结构变化后处理</span>
+          </header>
+          <div class="queue" id="relinkQueue"></div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const lyrics = [
+      { id: "l1", text: "Should old acquaintance be forgot", section: "第一段" },
+      { id: "l2", text: "And never brought to mind", section: "第一段" },
+      { id: "l3", text: "Should old acquaintance be forgot", section: "第一段" },
+      { id: "l4", text: "And days of auld lang syne", section: "第一段" },
+      { id: "l5", text: "For auld lang syne, my dear", section: "副歌" },
+      { id: "l6", text: "For auld lang syne", section: "副歌" },
+      { id: "l7", text: "We'll take a cup of kindness yet", section: "副歌" },
+      { id: "l8", text: "For auld lang syne", section: "副歌" }
+    ];
+
+    const people = [
+      { id: "p1", name: "林夏" },
+      { id: "p2", name: "陈舟" },
+      { id: "p3", name: "Mia" },
+      { id: "p4", name: "阿远" }
+    ];
+
+    const videos = [
+      { id: "v1", personId: "p1", title: "林夏-客厅清唱", status: "reviewed", duration: "00:18" },
+      { id: "v2", personId: "p2", title: "陈舟-户外片段", status: "reviewed", duration: "00:11" },
+      { id: "v3", personId: "p3", title: "Mia-副歌一遍", status: "uploaded", duration: "00:23" },
+      { id: "v4", personId: "p4", title: "阿远-合唱补录", status: "uploaded", duration: "00:15" },
+      { id: "v5", personId: "p1", title: "林夏-第二版", status: "reviewed", duration: "00:12" }
+    ];
+
+    const links = [
+      { videoId: "v1", lyricId: "l1", status: "active" },
+      { videoId: "v1", lyricId: "l2", status: "active" },
+      { videoId: "v2", lyricId: "l5", status: "active" },
+      { videoId: "v3", lyricId: "l5", status: "pending" },
+      { videoId: "v3", lyricId: "l6", status: "pending" },
+      { videoId: "v4", lyricId: "l7", status: "pending" },
+      { videoId: "v5", lyricId: "l1", status: "active" }
+    ];
+
+    const relinkTasks = [
+      { id: "r1", videoId: "v2", oldText: "For auld lang syne, dear", reason: "副歌句子拆分后待确认" },
+      { id: "r2", videoId: "v4", oldText: "We'll take a cup", reason: "歌词边界调整后待确认" }
+    ];
+
+    let activeLyricId = "l1";
+
+    // 根据选择器获取单个页面元素。
+    function find(selector) {
+      return document.querySelector(selector);
+    }
+
+    // 按标识查找歌词句子。
+    function getLyricById(id) {
+      for (let i = 0; i < lyrics.length; i += 1) {
+        if (lyrics[i].id === id) {
+          return lyrics[i];
+        }
+      }
+      return null;
+    }
+
+    // 按标识查找视频。
+    function getVideoById(id) {
+      for (let i = 0; i < videos.length; i += 1) {
+        if (videos[i].id === id) {
+          return videos[i];
+        }
+      }
+      return null;
+    }
+
+    // 按标识查找参与者。
+    function getPersonById(id) {
+      for (let i = 0; i < people.length; i += 1) {
+        if (people[i].id === id) {
+          return people[i];
+        }
+      }
+      return null;
+    }
+
+    // 计算某一句歌词关联的视频列表。
+    function getVideosForLyric(lyricId) {
+      const result = [];
+      for (let i = 0; i < links.length; i += 1) {
+        if (links[i].lyricId === lyricId && links[i].status !== "archived") {
+          const video = getVideoById(links[i].videoId);
+          if (video) {
+            result.push({ video, link: links[i] });
+          }
+        }
+      }
+      return result;
+    }
+
+    // 计算已参与的人数。
+    function countLinkedPeople() {
+      const ids = new Set();
+      for (let i = 0; i < videos.length; i += 1) {
+        ids.add(videos[i].personId);
+      }
+      return ids.size;
+    }
+
+    // 渲染顶部统计数据。
+    function renderStats() {
+      find("#statLyrics").textContent = lyrics.length;
+      find("#statVideos").textContent = videos.length;
+      find("#statPeople").textContent = countLinkedPeople();
+      find("#statPending").textContent = relinkTasks.length + videos.filter(function (video) {
+        return video.status === "uploaded";
+      }).length;
+    }
+
+    // 渲染左侧歌词进度列表。
+    function renderLyricList() {
+      const list = find("#lyricList");
+      list.innerHTML = "";
+
+      for (let i = 0; i < lyrics.length; i += 1) {
+        const lyric = lyrics[i];
+        const related = getVideosForLyric(lyric.id);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "lyric-row" + (lyric.id === activeLyricId ? " active" : "");
+        button.dataset.id = lyric.id;
+        button.innerHTML = `
+          <span class="lyric-index">${i + 1}</span>
+          <span class="lyric-main">
+            <span class="lyric-text">${lyric.text}</span>
+            <span class="meta-line">
+              <span>${lyric.section}</span>
+              <span>${related.length} 个视频</span>
+              <span class="badge ${related.length > 0 ? "good" : "warn"}">${related.length > 0 ? "已覆盖" : "缺素材"}</span>
+            </span>
+          </span>
+        `;
+        button.addEventListener("click", handleLyricClick);
+        list.appendChild(button);
+      }
+    }
+
+    // 处理歌词行点击并刷新详情。
+    function handleLyricClick(event) {
+      activeLyricId = event.currentTarget.dataset.id;
+      renderLyricList();
+      renderDetail();
+    }
+
+    // 渲染当前歌词句子的详情和视频卡片。
+    function renderDetail() {
+      const lyric = getLyricById(activeLyricId);
+      const related = getVideosForLyric(activeLyricId);
+      find("#detailLyric").textContent = lyric.text;
+      find("#lyricEditor").value = lyric.text;
+      find("#detailCount").textContent = related.length + " 个视频";
+      find("#detailStatus").textContent = related.length > 0 ? "已收集" : "缺素材";
+      find("#detailStatus").className = "badge " + (related.length > 0 ? "good" : "warn");
+
+      const grid = find("#videoGrid");
+      grid.innerHTML = "";
+      if (related.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "queue-item";
+        empty.innerHTML = "<strong>暂无视频</strong><p>这一句会在总览里保持缺素材状态。</p>";
+        grid.appendChild(empty);
+        return;
+      }
+
+      for (let i = 0; i < related.length; i += 1) {
+        const video = related[i].video;
+        const person = getPersonById(video.personId);
+        const card = document.createElement("article");
+        card.className = "video-card";
+        card.innerHTML = `
+          <div class="thumb ${i % 2 === 0 ? "" : "alt"}"><span class="play">▶</span></div>
+          <div class="video-body">
+            <strong>${video.title}</strong>
+            <span>${person.name} · ${video.duration} · ${related[i].link.status}</span>
+          </div>
+        `;
+        grid.appendChild(card);
+      }
+    }
+
+    // 渲染上传表单中的歌词多选项。
+    function renderUploadChoices() {
+      const list = find("#uploadChoices");
+      list.innerHTML = "";
+
+      for (let i = 0; i < lyrics.length; i += 1) {
+        const lyric = lyrics[i];
+        const label = document.createElement("label");
+        label.className = "choice";
+        label.innerHTML = `
+          <input type="checkbox" value="${lyric.id}" ${lyric.id === activeLyricId ? "checked" : ""}>
+          <span>${i + 1}. ${lyric.text}</span>
+        `;
+        list.appendChild(label);
+      }
+    }
+
+    // 渲染管理员待整理视频队列。
+    function renderPendingQueue() {
+      const queue = find("#pendingQueue");
+      queue.innerHTML = "";
+
+      for (let i = 0; i < videos.length; i += 1) {
+        if (videos[i].status !== "uploaded") {
+          continue;
+        }
+        const person = getPersonById(videos[i].personId);
+        const item = document.createElement("div");
+        item.className = "queue-item";
+        item.innerHTML = `
+          <strong>${videos[i].title}</strong>
+          <p>${person.name} 上传 · ${videos[i].duration} · 需要确认歌词关联和是否公开展示</p>
+          <button type="button">打开整理</button>
+        `;
+        queue.appendChild(item);
+      }
+    }
+
+    // 渲染歌词结构变化后的重新关联暂存区。
+    function renderRelinkQueue() {
+      const queue = find("#relinkQueue");
+      queue.innerHTML = "";
+
+      for (let i = 0; i < relinkTasks.length; i += 1) {
+        const task = relinkTasks[i];
+        const video = getVideoById(task.videoId);
+        const item = document.createElement("div");
+        item.className = "queue-item";
+        item.innerHTML = `
+          <strong>${video.title}</strong>
+          <p>原句：${task.oldText}</p>
+          <p>${task.reason}</p>
+          <button type="button">重新选择歌词</button>
+        `;
+        queue.appendChild(item);
+      }
+    }
+
+    // 保存当前歌词文本的前端预览状态。
+    function saveLyricText() {
+      const lyric = getLyricById(activeLyricId);
+      lyric.text = find("#lyricEditor").value.trim() || lyric.text;
+      find("#editStatus").textContent = "已保存文字修改，原有关联保持不变。";
+      renderLyricList();
+      renderDetail();
+      renderUploadChoices();
+    }
+
+    // 模拟结构修改保存后的重新关联提示。
+    function simulateStructureSave() {
+      find("#editStatus").textContent = "结构修改会把受影响视频放入 Relink 暂存区。";
+    }
+
+    // 模拟上传表单提交后的状态反馈。
+    function handleUploadSubmit(event) {
+      event.preventDefault();
+      find("#uploadStatus").textContent = "已模拟提交：新视频将进入待整理队列。";
+    }
+
+    // 绑定页面交互事件。
+    function bindEvents() {
+      find("#saveTextButton").addEventListener("click", saveLyricText);
+      find("#structureButton").addEventListener("click", simulateStructureSave);
+      find("#uploadForm").addEventListener("submit", handleUploadSubmit);
+    }
+
+    // 初始化静态预览页面。
+    function initPreview() {
+      renderStats();
+      renderLyricList();
+      renderDetail();
+      renderUploadChoices();
+      renderPendingQueue();
+      renderRelinkQueue();
+      bindEvents();
+    }
+
+    initPreview();
+  </script>
+</body>
+</html>
