@@ -52,6 +52,17 @@ function formatBufferedRanges(ranges) {
   return parts.join(",");
 }
 
+// 提取媒体错误细节，避免控制台只显示不可展开的 MediaError 对象。
+function getVideoError(video) {
+  if (!video.error) {
+    return null;
+  }
+  return {
+    code: video.error.code,
+    message: video.error.message || "-"
+  };
+}
+
 // 在用户即将播放或视频进入视口时再挂载 src，减少列表页并发预加载。
 function activateVideoPreview(video, reason) {
   if (video.dataset.loaded === "true") {
@@ -63,12 +74,13 @@ function activateVideoPreview(video, reason) {
   }
   video.src = source;
   video.dataset.loaded = "true";
-  console.info("[video-preview]", {
+  console.info("[video-preview]", JSON.stringify({
     event: "source-attached",
     reason,
     videoId: video.dataset.videoId || "-",
-    title: video.dataset.videoTitle || "-"
-  });
+    title: video.dataset.videoTitle || "-",
+    source
+  }));
 }
 
 // 同一页面只保留一个视频播放，避免多个视频同时占用服务器带宽。
@@ -93,13 +105,17 @@ function logVideoPlaybackEvent(event) {
     readyState: video.readyState,
     networkState: video.networkState,
     buffered: formatBufferedRanges(video.buffered),
-    loaded: video.dataset.loaded === "true"
+    loaded: video.dataset.loaded === "true",
+    currentSrc: video.currentSrc || "-",
+    canPlayMp4: video.canPlayType("video/mp4"),
+    canPlayQuickTime: video.canPlayType("video/quicktime"),
+    error: getVideoError(video)
   };
   if (event.type === "waiting" || event.type === "stalled" || event.type === "error") {
-    console.warn("[video-preview]", payload);
+    console.warn("[video-preview]", JSON.stringify(payload));
     return;
   }
-  console.info("[video-preview]", payload);
+  console.info("[video-preview]", JSON.stringify(payload));
 }
 
 // 绑定单个视频预览的延迟加载和诊断日志。

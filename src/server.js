@@ -28,8 +28,12 @@ const videoStaticOptions = {
   cacheControl: true,
   immutable: true,
   maxAge: "7d",
-  setHeaders(response) {
+  setHeaders(response, filePath) {
     response.setHeader("X-Content-Type-Options", "nosniff");
+    if (path.extname(filePath).toLowerCase() === ".mov") {
+      // 浏览器对 video/quicktime 支持不稳定，H.264/AAC 的 MOV 片段按 MP4 交给 HTML5 video 解析。
+      response.setHeader("Content-Type", "video/mp4");
+    }
   }
 };
 
@@ -79,6 +83,7 @@ function logVideoAssetRequest(request, response, next) {
     const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
     const bytes = response.getHeader("content-length") || "-";
     const contentRange = response.getHeader("content-range") || "-";
+    const contentType = response.getHeader("content-type") || "-";
     console.info(
       [
         "[video-static]",
@@ -87,6 +92,7 @@ function logVideoAssetRequest(request, response, next) {
         `status=${response.statusCode}`,
         `range=${range}`,
         `contentRange=${contentRange}`,
+        `contentType=${contentType}`,
         `bytes=${bytes}`,
         `durationMs=${durationMs.toFixed(1)}`
       ].join(" ")

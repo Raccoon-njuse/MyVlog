@@ -83,10 +83,12 @@ storage/videos/
 服务端会为 `/storage/videos/...` 静态视频请求输出 `[video-static]` 日志，例如：
 
 ```text
-[video-static] GET /storage/videos/example.mp4 status=206 range=bytes=0- contentRange=bytes 0-1023/4096 bytes=1024 durationMs=2.3
+[video-static] GET /storage/videos/example.mp4 status=206 range=bytes=0- contentRange=bytes 0-1023/4096 contentType=video/mp4 bytes=1024 durationMs=2.3
 ```
 
 排查服务器卡顿时，优先确认浏览器播放请求是否带 `Range`，服务端是否返回 `206`，以及 `durationMs` 是否明显升高。
+
+`.mov` 上传文件会按 `video/mp4` 响应给浏览器，避免部分浏览器把 H.264/AAC 的 MOV 片段按 `video/quicktime` 拒绝播放。若浏览器控制台仍出现 `[video-preview]` 的 `error` 事件，需要重点看其中的 `error.code`、`error.message` 和 `canPlayMp4`。
 
 ## 常用命令
 
