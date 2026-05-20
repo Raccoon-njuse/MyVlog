@@ -1,0 +1,9 @@
+node_modules/
+.env
+.DS_Store
+.playwright-cli/
+storage/videos/*
+storage/thumbnails/*
+!storage/videos/.gitkeep
+!storage/thumbnails/.gitkeep
+npm-debug.log*

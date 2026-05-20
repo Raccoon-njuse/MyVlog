@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>友谊地久天长素材收集</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f6f5e'/%3E%3Cpath d='M9 17c4-6 10-6 14 0' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='12' r='2' fill='white'/%3E%3Ccircle cx='20' cy='12' r='2' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <strong>友谊地久天长</strong>
+        <span>视频素材收集台</span>
+      </div>
+      <nav class="nav" aria-label="主导航">
+        <a class="active" href="#overview">收集总览 <span id="navLyricCount">0</span></a>
+        <a href="#upload">上传入口 <span id="navPendingCount">0</span></a>
+        <a href="#admin">整理后台</a>
+        <a href="#relink">Relink 暂存</a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <section class="topbar">
+        <div>
+          <h1>按歌词句子整理每个人的视频</h1>
+          <p class="lede">每个人可以上传多个片段，每个片段可以关联一句或多句歌词。歌词编辑后，结构受影响的视频进入暂存区，等待手动重新关联。</p>
+        </div>
+        <div class="toolbar">
+          <button type="button" data-action="reload">刷新</button>
+          <a class="button primary" href="#upload">新增上传</a>
+        </div>
+      </section>
+
+      <section class="stats" aria-label="收集统计">
+        <div class="stat"><span>歌词句子</span><strong id="statLyrics">0</strong></div>
+        <div class="stat"><span>已收视频</span><strong id="statVideos">0</strong></div>
+        <div class="stat"><span>参与人数</span><strong id="statPeople">0</strong></div>
+        <div class="stat"><span>待处理</span><strong id="statPending">0</strong></div>
+      </section>
+
+      <section class="workbench" id="overview">
+        <article class="panel">
+          <header class="panel-header">
+            <h2>歌词进度</h2>
+            <span>逐句统计</span>
+          </header>
+          <div class="lyric-list" id="lyricList"></div>
+        </article>
+
+        <article class="panel">
+          <header class="panel-header">
+            <h2>句子详情</h2>
+            <span id="detailCount">0 个视频</span>
+          </header>
+          <div class="detail">
+            <div class="detail-title">
+              <h2 id="detailLyric">加载中</h2>
+              <span class="badge" id="detailStatus">-</span>
+            </div>
+            <div class="edit-box">
+              <input id="sectionEditor" aria-label="段落标签" placeholder="段落标签">
+              <textarea id="lyricEditor" aria-label="歌词文本编辑"></textarea>
+              <div class="toolbar">
+                <button type="button" data-action="save-lyric">保存文字修改</button>
+              </div>
+              <span class="status-text" id="editStatus"></span>
+            </div>
+            <div class="video-grid" id="videoGrid"></div>
+          </div>
+        </article>
+
+        <aside class="side-stack" id="upload">
+          <article class="panel">
+            <header class="panel-header">
+              <h2>上传素材</h2>
+              <span>待整理</span>
+            </header>
+            <form class="form" id="uploadForm">
+              <div class="field">
+                <label for="personName">姓名</label>
+                <input id="personName" name="name" autocomplete="name" required>
+              </div>
+              <div class="field">
+                <label for="contact">联系方式</label>
+                <input id="contact" name="contact" placeholder="微信 / 手机 / 邮箱">
+              </div>
+              <div class="field">
+                <label for="uploadNote">备注</label>
+                <textarea id="uploadNote" name="note" placeholder="例如：唱的是副歌第二遍"></textarea>
+              </div>
+              <div class="field">
+                <label>选择歌词</label>
+                <div class="choice-list" id="uploadChoices"></div>
+              </div>
+              <label class="dropzone">
+                <input id="videoFiles" type="file" multiple accept="video/*" required>
+                <span>选择或拖入视频文件</span>
+                <small>提交后进入待整理</small>
+              </label>
+              <button class="primary" type="submit">提交上传</button>
+              <span class="status-text" id="uploadStatus"></span>
+            </form>
+          </article>
+        </aside>
+      </section>
+
+      <section class="footer-grid" id="admin">
+        <article class="panel">
+          <header class="panel-header">
+            <h2>待整理视频</h2>
+            <span>管理员确认后公开</span>
+          </header>
+          <div class="queue" id="pendingQueue"></div>
+        </article>
+
+        <article class="panel" id="relink">
+          <header class="panel-header">
+            <h2>Relink 暂存区</h2>
+            <span>歌词结构变化后处理</span>
+          </header>
+          <div class="queue" id="relinkQueue"></div>
+        </article>
+      </section>
+
+      <section class="panel structure-panel">
+        <header class="panel-header">
+          <h2>歌词结构编辑</h2>
+          <span>格式：段落|歌词</span>
+        </header>
+        <div class="structure-body">
+          <textarea id="structureEditor" aria-label="歌词结构编辑"></textarea>
+          <div class="toolbar">
+            <button type="button" data-action="save-structure">保存结构修改</button>
+          </div>
+          <p class="hint">结构保存会整体替换当前歌词，并把已有视频关联放入 Relink 暂存区。普通错字和标点修改请用上方“保存文字修改”。</p>
+          <span class="status-text" id="structureStatus"></span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

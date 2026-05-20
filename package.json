@@ -1,0 +1,18 @@
+{
+  "name": "myvlog",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "db:init": "node scripts/db-init.js",
+    "check": "node --check src/server.js && node --check src/db.js && node --check scripts/db-init.js && node --check public/app.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "multer": "^2.1.1",
+    "pg": "^8.13.1"
+  }
+}
