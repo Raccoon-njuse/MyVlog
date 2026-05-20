@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { closePool, query } from "../src/db.js";
+import { closePool, query, withTransaction } from "../src/db.js";
 
 dotenv.config();
 
@@ -21,6 +21,15 @@ function toMigrationPath(name) {
   return path.join(migrationsDir, name);
 }
 
+// 从迁移文件路径中提取迁移编号和名称。
+function toMigrationRecord(filePath) {
+  const filename = path.basename(filePath);
+  return {
+    id: filename,
+    path: filePath
+  };
+}
+
 // 读取迁移目录中按名称排序的 SQL 文件。
 async function listMigrationFiles() {
   const names = await fs.readdir(migrationsDir);
@@ -30,26 +39,72 @@ async function listMigrationFiles() {
     .map(toMigrationPath);
 }
 
-// 执行单个 SQL 文件。
-async function runMigration(filePath) {
-  const sql = await fs.readFile(filePath, "utf8");
-  await query(sql);
-  console.log(`已执行迁移: ${path.basename(filePath)}`);
+// 确保迁移记录表存在，用于避免重复执行已应用的迁移。
+async function ensureMigrationTable() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id text PRIMARY KEY,
+      executed_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    COMMENT ON TABLE schema_migrations IS '数据库迁移记录表';
+    COMMENT ON COLUMN schema_migrations.id IS '已执行迁移文件名';
+    COMMENT ON COLUMN schema_migrations.executed_at IS '迁移执行时间';
+  `);
 }
 
-// 按顺序执行所有迁移文件。
-async function runAllMigrations() {
+// 读取数据库中已经记录为完成的迁移。
+async function listAppliedMigrationIds() {
+  const result = await query("SELECT id FROM schema_migrations ORDER BY id");
+  return new Set(result.rows.map(function getMigrationId(row) {
+    return row.id;
+  }));
+}
+
+// 执行单个 SQL 文件，并在同一事务中写入迁移记录。
+async function runMigration(record) {
+  const sql = await fs.readFile(record.path, "utf8");
+  await withTransaction(async function runMigrationTransaction(client) {
+    await client.query(sql);
+    await client.query(
+      `
+        INSERT INTO schema_migrations (id)
+        VALUES ($1)
+        ON CONFLICT (id) DO NOTHING
+      `,
+      [record.id]
+    );
+  });
+  console.log(`已执行迁移: ${record.id}`);
+}
+
+// 按顺序执行尚未记录的迁移文件。
+async function runPendingMigrations() {
+  await ensureMigrationTable();
   const files = await listMigrationFiles();
-  for (let i = 0; i < files.length; i += 1) {
-    await runMigration(files[i]);
+  const records = files.map(toMigrationRecord);
+  const appliedIds = await listAppliedMigrationIds();
+  let executedCount = 0;
+
+  for (let i = 0; i < records.length; i += 1) {
+    if (appliedIds.has(records[i].id)) {
+      console.log(`跳过已执行迁移: ${records[i].id}`);
+      continue;
+    }
+    await runMigration(records[i]);
+    executedCount += 1;
+  }
+
+  if (executedCount === 0) {
+    console.log("没有待执行迁移");
   }
 }
 
-// 初始化数据库并确保连接被正确关闭。
+// 执行数据库迁移并确保连接被正确关闭。
 async function main() {
   try {
-    await runAllMigrations();
-    console.log("数据库初始化完成");
+    await runPendingMigrations();
+    console.log("数据库迁移完成");
   } finally {
     await closePool();
   }

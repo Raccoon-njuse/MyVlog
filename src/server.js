@@ -67,7 +67,6 @@ function mapLyricRow(row) {
     id: row.id,
     orderIndex: Number(row.order_index),
     text: row.text,
-    sectionLabel: row.section_label,
     videos: row.videos || []
   };
 }
@@ -84,7 +83,6 @@ async function getOverviewData() {
       lyric_units.id::text,
       lyric_units.order_index,
       lyric_units.text,
-      lyric_units.section_label,
       COALESCE(
         json_agg(
           json_build_object(
@@ -337,11 +335,10 @@ async function handleCreateUpload(request, response, next) {
   }
 }
 
-// 更新单句歌词文字或分段标签，不触发重新关联。
+// 更新单句歌词文字，不触发重新关联。
 async function handleUpdateLyric(request, response, next) {
   try {
     const text = normalizeText(request.body.text);
-    const sectionLabel = normalizeText(request.body.sectionLabel);
 
     if (!text) {
       response.status(400).json({ error: "歌词不能为空" });
@@ -352,13 +349,12 @@ async function handleUpdateLyric(request, response, next) {
       `
         UPDATE lyric_units
         SET text = $1,
-            section_label = COALESCE(NULLIF($2, ''), section_label),
             updated_at = now()
-        WHERE id = $3
+        WHERE id = $2
           AND is_active = true
-        RETURNING id::text, order_index, text, section_label
+        RETURNING id::text, order_index, text
       `,
-      [text, sectionLabel, request.params.id]
+      [text, request.params.id]
     );
 
     if (result.rows.length === 0) {
@@ -372,7 +368,7 @@ async function handleUpdateLyric(request, response, next) {
   }
 }
 
-// 将结构编辑文本解析成新的歌词结构。
+// 将结构编辑文本解析成一行一句的歌词结构。
 function parseStructureLines(rawText) {
   const sourceLines = String(rawText || "").split(/\r?\n/);
   const parsed = [];
@@ -381,15 +377,7 @@ function parseStructureLines(rawText) {
     if (!line) {
       continue;
     }
-    const separatorIndex = line.indexOf("|");
-    if (separatorIndex === -1) {
-      parsed.push({ sectionLabel: "", text: line });
-    } else {
-      parsed.push({
-        sectionLabel: line.slice(0, separatorIndex).trim(),
-        text: line.slice(separatorIndex + 1).trim()
-      });
-    }
+    parsed.push({ text: line });
   }
   return parsed;
 }
@@ -461,10 +449,10 @@ async function handleReplaceLyricStructure(request, response, next) {
       for (let i = 0; i < parsedLines.length; i += 1) {
         await client.query(
           `
-            INSERT INTO lyric_units (order_index, text, section_label, version)
-            VALUES ($1, $2, $3, 1)
+            INSERT INTO lyric_units (order_index, text, version)
+            VALUES ($1, $2, 1)
           `,
-          [i + 1, parsedLines[i].text, parsedLines[i].sectionLabel]
+          [i + 1, parsedLines[i].text]
         );
       }
 

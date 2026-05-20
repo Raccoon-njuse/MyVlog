@@ -35,7 +35,6 @@ CREATE TABLE IF NOT EXISTS lyric_units (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   order_index integer NOT NULL,
   text text NOT NULL,
-  section_label text NOT NULL DEFAULT '',
   is_active boolean NOT NULL DEFAULT true,
   version integer NOT NULL DEFAULT 1,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -107,7 +106,6 @@ COMMENT ON TABLE lyric_units IS '歌词句子表';
 COMMENT ON COLUMN lyric_units.id IS '歌词句子唯一标识';
 COMMENT ON COLUMN lyric_units.order_index IS '歌词展示顺序';
 COMMENT ON COLUMN lyric_units.text IS '歌词正文';
-COMMENT ON COLUMN lyric_units.section_label IS '段落标签，例如第一段、副歌';
 COMMENT ON COLUMN lyric_units.is_active IS '是否仍在当前歌词版本中使用';
 COMMENT ON COLUMN lyric_units.version IS '歌词版本号';
 COMMENT ON COLUMN lyric_units.created_at IS '创建时间';

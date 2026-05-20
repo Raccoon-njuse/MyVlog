@@ -61,7 +61,6 @@
               <span class="badge" id="detailStatus">-</span>
             </div>
             <div class="edit-box">
-              <input id="sectionEditor" aria-label="段落标签" placeholder="段落标签">
               <textarea id="lyricEditor" aria-label="歌词文本编辑"></textarea>
               <div class="toolbar">
                 <button type="button" data-action="save-lyric">保存文字修改</button>
@@ -128,14 +127,14 @@
       <section class="panel structure-panel">
         <header class="panel-header">
           <h2>歌词结构编辑</h2>
-          <span>格式：段落|歌词</span>
+          <span>每行一句歌词</span>
         </header>
         <div class="structure-body">
           <textarea id="structureEditor" aria-label="歌词结构编辑"></textarea>
           <div class="toolbar">
             <button type="button" data-action="save-structure">保存结构修改</button>
           </div>
-          <p class="hint">结构保存会整体替换当前歌词，并把已有视频关联放入 Relink 暂存区。普通错字和标点修改请用上方“保存文字修改”。</p>
+          <p class="hint">结构保存会整体替换当前歌词，并把已有视频关联放入 Relink 暂存区。每一行会保存成一句歌词；普通错字和标点修改请用上方“保存文字修改”。</p>
           <span class="status-text" id="structureStatus"></span>
         </div>
       </section>

@@ -98,7 +98,6 @@
 - 改错字。
 - 改标点。
 - 调整空格。
-- 修改显示分段名。
 
 ## 4. 数据模型
 
@@ -138,7 +137,6 @@
 | id | string | 歌词句子唯一标识 |
 | order_index | number | 歌词展示顺序 |
 | text | text | 歌词正文 |
-| section_label | string | 段落标签，例如第一段、副歌 |
 | is_active | boolean | 是否仍在当前歌词版本中使用 |
 | version | number | 歌词版本号 |
 | created_at | datetime | 创建时间 |

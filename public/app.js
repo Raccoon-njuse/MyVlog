@@ -118,7 +118,6 @@ function renderLyricRow(lyric) {
       <span class="lyric-main">
         <span class="lyric-text">${escapeHtml(lyric.text)}</span>
         <span class="meta-line">
-          <span>${escapeHtml(lyric.sectionLabel || "未分段")}</span>
           <span>${count} 个视频</span>
           <span class="badge ${badgeClass}">${badgeText}</span>
         </span>
@@ -160,7 +159,6 @@ function renderDetail() {
     find("#detailCount").textContent = "0 个视频";
     find("#detailStatus").textContent = "-";
     find("#lyricEditor").value = "";
-    find("#sectionEditor").value = "";
     grid.innerHTML = "";
     return;
   }
@@ -171,7 +169,6 @@ function renderDetail() {
   find("#detailStatus").textContent = count > 0 ? "已收集" : "缺素材";
   find("#detailStatus").className = `badge ${count > 0 ? "good" : "warn"}`;
   find("#lyricEditor").value = lyric.text;
-  find("#sectionEditor").value = lyric.sectionLabel || "";
 
   let html = "";
   for (let i = 0; i < lyric.videos.length; i += 1) {
@@ -261,7 +258,7 @@ function renderStructureEditor() {
     if (i > 0) {
       text += "\n";
     }
-    text += `${state.lyrics[i].sectionLabel || ""}|${state.lyrics[i].text}`;
+    text += state.lyrics[i].text;
   }
   find("#structureEditor").value = text;
 }
@@ -277,8 +274,7 @@ async function saveCurrentLyric() {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      text: find("#lyricEditor").value,
-      sectionLabel: find("#sectionEditor").value
+      text: find("#lyricEditor").value
     })
   });
   find("#editStatus").textContent = "已保存文字修改，原有关联保持不变。";
