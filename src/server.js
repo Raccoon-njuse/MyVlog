@@ -23,6 +23,16 @@ const port = Number(process.env.PORT || 3000);
 
 fsSync.mkdirSync(uploadDir, { recursive: true });
 
+const videoStaticOptions = {
+  acceptRanges: true,
+  cacheControl: true,
+  immutable: true,
+  maxAge: "7d",
+  setHeaders(response) {
+    response.setHeader("X-Content-Type-Options", "nosniff");
+  }
+};
+
 // 清理文件名中不适合放进路径的字符。
 function sanitizeFilename(originalName) {
   const baseName = path.basename(originalName || "video");
@@ -59,7 +69,31 @@ const app = express();
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use("/", express.static(publicDir));
-app.use(uploadUrlPrefix, express.static(uploadDir));
+app.use(uploadUrlPrefix, logVideoAssetRequest, express.static(uploadDir, videoStaticOptions));
+
+// 记录视频静态资源的 Range 请求，便于服务器排查播放卡顿。
+function logVideoAssetRequest(request, response, next) {
+  const startedAt = process.hrtime.bigint();
+  const range = request.headers.range || "-";
+  response.on("finish", function logVideoAssetResponse() {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    const bytes = response.getHeader("content-length") || "-";
+    const contentRange = response.getHeader("content-range") || "-";
+    console.info(
+      [
+        "[video-static]",
+        request.method,
+        request.originalUrl,
+        `status=${response.statusCode}`,
+        `range=${range}`,
+        `contentRange=${contentRange}`,
+        `bytes=${bytes}`,
+        `durationMs=${durationMs.toFixed(1)}`
+      ].join(" ")
+    );
+  });
+  next();
+}
 
 // 将数据库中的 snake_case 行转换成前端使用的结构。
 function mapLyricRow(row) {

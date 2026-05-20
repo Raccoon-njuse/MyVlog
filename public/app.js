@@ -26,6 +26,140 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+let videoPreviewObserver = null;
+
+const videoPlaybackLogEvents = [
+  "loadstart",
+  "loadedmetadata",
+  "canplay",
+  "playing",
+  "waiting",
+  "stalled",
+  "suspend",
+  "error",
+  "ended"
+];
+
+// 把 TimeRanges 转成紧凑字符串，便于排查卡顿时是否已经缓冲到当前位置。
+function formatBufferedRanges(ranges) {
+  if (!ranges || ranges.length === 0) {
+    return "-";
+  }
+  const parts = [];
+  for (let i = 0; i < ranges.length; i += 1) {
+    parts.push(`${ranges.start(i).toFixed(2)}-${ranges.end(i).toFixed(2)}`);
+  }
+  return parts.join(",");
+}
+
+// 在用户即将播放或视频进入视口时再挂载 src，减少列表页并发预加载。
+function activateVideoPreview(video, reason) {
+  if (video.dataset.loaded === "true") {
+    return;
+  }
+  const source = video.dataset.src;
+  if (!source) {
+    return;
+  }
+  video.src = source;
+  video.dataset.loaded = "true";
+  console.info("[video-preview]", {
+    event: "source-attached",
+    reason,
+    videoId: video.dataset.videoId || "-",
+    title: video.dataset.videoTitle || "-"
+  });
+}
+
+// 同一页面只保留一个视频播放，避免多个视频同时占用服务器带宽。
+function pauseOtherVideos(currentVideo) {
+  const videos = document.querySelectorAll("video[data-video-preview]");
+  for (let i = 0; i < videos.length; i += 1) {
+    if (videos[i] !== currentVideo && !videos[i].paused) {
+      videos[i].pause();
+    }
+  }
+}
+
+// 输出浏览器侧视频播放状态，服务器测试时可对照后端 Range 日志。
+function logVideoPlaybackEvent(event) {
+  const video = event.currentTarget;
+  const payload = {
+    event: event.type,
+    videoId: video.dataset.videoId || "-",
+    title: video.dataset.videoTitle || "-",
+    currentTime: video.currentTime.toFixed(2),
+    duration: Number.isFinite(video.duration) ? video.duration.toFixed(2) : "-",
+    readyState: video.readyState,
+    networkState: video.networkState,
+    buffered: formatBufferedRanges(video.buffered),
+    loaded: video.dataset.loaded === "true"
+  };
+  if (event.type === "waiting" || event.type === "stalled" || event.type === "error") {
+    console.warn("[video-preview]", payload);
+    return;
+  }
+  console.info("[video-preview]", payload);
+}
+
+// 绑定单个视频预览的延迟加载和诊断日志。
+function bindVideoPreview(video) {
+  if (video.dataset.bound === "true") {
+    return;
+  }
+  video.dataset.bound = "true";
+  video.addEventListener("pointerenter", function handleVideoPointerEnter() {
+    activateVideoPreview(video, "pointerenter");
+  }, { once: true });
+  video.addEventListener("pointerdown", function handleVideoPointerDown() {
+    activateVideoPreview(video, "pointerdown");
+  });
+  video.addEventListener("touchstart", function handleVideoTouchStart() {
+    activateVideoPreview(video, "touchstart");
+  }, { passive: true, once: true });
+  video.addEventListener("focus", function handleVideoFocus() {
+    activateVideoPreview(video, "focus");
+  }, { once: true });
+  video.addEventListener("play", function handleVideoPlay() {
+    activateVideoPreview(video, "play");
+    pauseOtherVideos(video);
+  });
+  for (let i = 0; i < videoPlaybackLogEvents.length; i += 1) {
+    video.addEventListener(videoPlaybackLogEvents[i], logVideoPlaybackEvent);
+  }
+}
+
+// 视口附近的视频才挂载 src，避免一次性触发所有视频文件请求。
+function observeVideoPreview(video) {
+  if (!("IntersectionObserver" in window)) {
+    activateVideoPreview(video, "no-intersection-observer");
+    return;
+  }
+  if (!videoPreviewObserver) {
+    videoPreviewObserver = new IntersectionObserver(function handleVideoIntersection(entries) {
+      for (let i = 0; i < entries.length; i += 1) {
+        if (entries[i].isIntersecting) {
+          activateVideoPreview(entries[i].target, "intersection");
+          videoPreviewObserver.unobserve(entries[i].target);
+        }
+      }
+    }, {
+      rootMargin: "240px 0px",
+      threshold: 0.01
+    });
+  }
+  videoPreviewObserver.observe(video);
+}
+
+// 每次重新渲染视频列表后，重新接管当前 DOM 中的视频预览。
+function prepareVideoPreviews() {
+  const videos = document.querySelectorAll("video[data-video-preview]");
+  for (let i = 0; i < videos.length; i += 1) {
+    bindVideoPreview(videos[i]);
+    observeVideoPreview(videos[i]);
+  }
+}
+
 // 向后端请求 JSON 数据。
 async function requestJson(url, options) {
   const response = await fetch(url, options);
@@ -140,7 +274,15 @@ function renderLyricList() {
 function renderVideoCard(video) {
   return `
     <article class="video-card">
-      <video controls preload="metadata" src="${escapeHtml(video.fileUrl)}"></video>
+      <video
+        controls
+        playsinline
+        preload="none"
+        data-video-preview
+        data-video-id="${escapeHtml(video.videoId)}"
+        data-video-title="${escapeHtml(video.title)}"
+        data-src="${escapeHtml(video.fileUrl)}"
+      ></video>
       <div class="video-body">
         <strong>${escapeHtml(video.title)}</strong>
         <span>${escapeHtml(video.personName)} · ${escapeHtml(video.videoStatus)} · ${escapeHtml(video.linkStatus)}</span>
@@ -175,6 +317,7 @@ function renderDetail() {
     html += renderVideoCard(lyric.videos[i]);
   }
   grid.innerHTML = html || '<div class="queue-item"><strong>暂无视频</strong><p>这一句会在总览里保持缺素材状态。</p></div>';
+  prepareVideoPreviews();
 }
 
 // 渲染上传表单里的歌词多选项。

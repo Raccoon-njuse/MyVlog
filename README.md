@@ -74,6 +74,20 @@ storage/videos/
 
 该目录内容已被 `.gitignore` 忽略，只保留 `.gitkeep`。
 
+## 视频播放排查
+
+前端视频预览使用 `preload="none"`，并只在视频进入视口或用户准备播放时挂载真实 `src`，避免列表页一次性触发大量视频预加载请求。同一页面开始播放一个视频时，会暂停其它正在播放的视频，降低服务器并发传输压力。
+
+浏览器控制台会输出 `[video-preview]` 日志，重点关注 `waiting`、`stalled`、`error` 事件中的 `currentTime`、`buffered`、`readyState` 和 `networkState`。
+
+服务端会为 `/storage/videos/...` 静态视频请求输出 `[video-static]` 日志，例如：
+
+```text
+[video-static] GET /storage/videos/example.mp4 status=206 range=bytes=0- contentRange=bytes 0-1023/4096 bytes=1024 durationMs=2.3
+```
+
+排查服务器卡顿时，优先确认浏览器播放请求是否带 `Range`，服务端是否返回 `206`，以及 `durationMs` 是否明显升高。
+
 ## 常用命令
 
 ```bash
