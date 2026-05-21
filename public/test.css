@@ -93,6 +93,26 @@
   background: #16221e;
 }
 
+.test-video-unavailable {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 16px;
+  color: #d8efe7;
+  background: #16221e;
+  text-align: center;
+}
+
+.test-video-unavailable p {
+  max-width: 32rem;
+  margin: 0;
+  color: #d8efe7;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .test-player-wrap .video-js {
   height: auto;
 }

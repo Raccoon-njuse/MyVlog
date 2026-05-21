@@ -31,6 +31,13 @@ const linkStatusText = {
   archived: "已归档"
 };
 
+const transcodeStatusText = {
+  pending: "等待转码",
+  processing: "转码中",
+  ready: "可播放",
+  failed: "转码失败"
+};
+
 // 为本轮测试生成短缓存戳，方便在服务端日志里识别同一次打开。
 function createCacheToken() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -79,6 +86,11 @@ function buildCacheBustedUrl(fileUrl) {
   const url = new URL(fileUrl, window.location.origin);
   url.searchParams.set("testSession", testState.cacheToken);
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+// 测试页也只允许播放低码率副本，原始文件只作为诊断信息展示。
+function isVideoPlayable(video) {
+  return video.transcodeStatus === "ready" && Boolean(video.fileUrl);
 }
 
 // 记录页面和控制台都能看到的播放事件。
@@ -154,22 +166,31 @@ function renderLyricLinks(links) {
 
 // 渲染单个测试视频卡片。
 function renderVideoCard(video) {
-  const src = buildCacheBustedUrl(video.fileUrl);
+  const playable = isVideoPlayable(video);
+  const src = playable ? buildCacheBustedUrl(video.fileUrl) : "";
   const statusText = videoStatusText[video.status] || video.status || "-";
+  const transcodeText = transcodeStatusText[video.transcodeStatus] || video.transcodeStatus || "-";
   return `
     <article class="test-video-card">
       <div class="test-player-wrap">
-        <video
-          id="test-video-${escapeHtml(video.id)}"
-          class="video-js vjs-default-skin vjs-big-play-centered"
-          controls
-          playsinline
-          preload="metadata"
-          data-test-video
-          data-video-id="${escapeHtml(video.id)}"
-          data-video-title="${escapeHtml(video.title)}"
-          src="${escapeHtml(src)}"
-        ></video>
+        ${playable ? `
+          <video
+            id="test-video-${escapeHtml(video.id)}"
+            class="video-js vjs-default-skin vjs-big-play-centered"
+            controls
+            playsinline
+            preload="metadata"
+            data-test-video
+            data-video-id="${escapeHtml(video.id)}"
+            data-video-title="${escapeHtml(video.title)}"
+            src="${escapeHtml(src)}"
+          ></video>
+        ` : `
+          <div class="test-video-unavailable">
+            <span class="badge ${video.transcodeStatus === "failed" ? "danger" : "warn"}">${escapeHtml(transcodeText)}</span>
+            <p>${escapeHtml(video.transcodeError || "低码率播放副本生成完成后才允许播放。")}</p>
+          </div>
+        `}
       </div>
       <div class="test-video-meta">
         <div class="test-video-title">
@@ -178,9 +199,11 @@ function renderVideoCard(video) {
         </div>
         <div class="test-meta-grid">
           <span>上传者：${escapeHtml(video.personName || "-")}</span>
+          <span>转码状态：${escapeHtml(transcodeText)}</span>
           <span>创建时间：${escapeHtml(formatDate(video.createdAt))}</span>
-          <span>文件地址：${escapeHtml(video.fileUrl)}</span>
-          <a class="button test-file-link" href="${escapeHtml(src)}" target="_blank" rel="noreferrer">打开原文件</a>
+          <span>播放副本：${escapeHtml(video.fileUrl || "-")}</span>
+          <span>原始文件：${escapeHtml(video.originalFileUrl || "-")}</span>
+          ${playable ? `<a class="button test-file-link" href="${escapeHtml(src)}" target="_blank" rel="noreferrer">打开播放副本</a>` : ""}
         </div>
         <div class="test-lyric-links">${renderLyricLinks(video.lyricLinks)}</div>
       </div>

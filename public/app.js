@@ -52,6 +52,13 @@ const linkStatusLabels = {
   archived: "已归档"
 };
 
+const transcodeStatusLabels = {
+  pending: "等待转码",
+  processing: "转码中",
+  ready: "可播放",
+  failed: "转码失败"
+};
+
 // 根据当前路径判断页面角色。
 function resolveView() {
   const normalized = window.location.pathname.replace(/\/+$/, "") || "/";
@@ -432,13 +439,44 @@ function getUploaderVideosForLyric(lyricId) {
 
 // 按状态返回徽标样式。
 function getStatusClass(status) {
-  if (status === "reviewed" || status === "active") {
+  if (status === "reviewed" || status === "active" || status === "ready") {
     return "good";
   }
-  if (status === "rejected" || status === "archived") {
+  if (status === "rejected" || status === "archived" || status === "failed") {
     return "danger";
   }
   return "warn";
+}
+
+// 判断视频是否已有低码率播放副本。
+function isVideoPlayable(video) {
+  const status = video.transcodeStatus || video.transcode_status;
+  return status === "ready" && Boolean(getVideoPlaybackUrl(video));
+}
+
+// 取出前端真正允许播放的视频地址，只使用低码率副本。
+function getVideoPlaybackUrl(video) {
+  const explicit = video.playbackFileUrl || video.playback_file_url;
+  if (explicit) {
+    return explicit;
+  }
+  if (video.transcodeStatus === "ready") {
+    return video.fileUrl || "";
+  }
+  return "";
+}
+
+// 渲染未转码视频的占位状态，避免页面直接播放原始上传文件。
+function renderVideoUnavailable(video) {
+  const status = video.transcodeStatus || video.transcode_status || "pending";
+  const label = transcodeStatusLabels[status] || status;
+  const error = video.transcodeError || video.transcode_error || "";
+  return `
+    <div class="video-unavailable">
+      <span class="badge ${getStatusClass(status)}">${escapeHtml(label)}</span>
+      <p>${escapeHtml(error || "播放副本生成完成后才允许播放。")}</p>
+    </div>
+  `;
 }
 
 // 格式化服务端时间。
@@ -486,20 +524,25 @@ function renderVisitorLyricRow(lyric) {
 // 渲染上传者自己的行内视频。
 function renderInlineUploaderVideo(match) {
   const video = match.video;
+  const status = video.transcode_status || "pending";
+  const playable = isVideoPlayable(video);
+  const playbackUrl = getVideoPlaybackUrl(video);
   return `
     <article class="inline-video-card">
-      <video
-        controls
-        playsinline
-        preload="none"
-        data-video-preview
-        data-video-id="${escapeHtml(video.id)}"
-        data-video-title="${escapeHtml(video.original_filename)}"
-        data-src="${escapeHtml(video.file_url)}"
-      ></video>
+      ${playable ? `
+        <video
+          controls
+          playsinline
+          preload="none"
+          data-video-preview
+          data-video-id="${escapeHtml(video.id)}"
+          data-video-title="${escapeHtml(video.original_filename)}"
+          data-src="${escapeHtml(playbackUrl)}"
+        ></video>
+      ` : renderVideoUnavailable(video)}
       <div>
         <strong>${escapeHtml(video.original_filename)}</strong>
-        <span>${escapeHtml(videoStatusLabels[video.status] || video.status)} · ${escapeHtml(linkStatusLabels[match.link.status] || match.link.status)}</span>
+        <span>${escapeHtml(videoStatusLabels[video.status] || video.status)} · ${escapeHtml(transcodeStatusLabels[status] || status)} · ${escapeHtml(linkStatusLabels[match.link.status] || match.link.status)}</span>
       </div>
     </article>
   `;
@@ -566,20 +609,25 @@ function renderUploaderLyricList() {
 
 // 渲染视频卡片。
 function renderVideoCard(video) {
+  const status = video.transcodeStatus || "pending";
+  const playable = isVideoPlayable(video);
+  const playbackUrl = getVideoPlaybackUrl(video);
   return `
     <article class="video-card">
-      <video
-        controls
-        playsinline
-        preload="none"
-        data-video-preview
-        data-video-id="${escapeHtml(video.videoId)}"
-        data-video-title="${escapeHtml(video.title)}"
-        data-src="${escapeHtml(video.fileUrl)}"
-      ></video>
+      ${playable ? `
+        <video
+          controls
+          playsinline
+          preload="none"
+          data-video-preview
+          data-video-id="${escapeHtml(video.videoId)}"
+          data-video-title="${escapeHtml(video.title)}"
+          data-src="${escapeHtml(playbackUrl)}"
+        ></video>
+      ` : renderVideoUnavailable(video)}
       <div class="video-body">
         <strong>${escapeHtml(video.title)}</strong>
-        <span>${escapeHtml(video.personName)} · ${escapeHtml(videoStatusLabels[video.videoStatus] || video.videoStatus)} · ${escapeHtml(linkStatusLabels[video.linkStatus] || video.linkStatus)}</span>
+        <span>${escapeHtml(video.personName)} · ${escapeHtml(videoStatusLabels[video.videoStatus] || video.videoStatus)} · ${escapeHtml(transcodeStatusLabels[status] || status)} · ${escapeHtml(linkStatusLabels[video.linkStatus] || video.linkStatus)}</span>
       </div>
     </article>
   `;
@@ -679,16 +727,19 @@ function renderUploaderVideos() {
   let html = "";
   for (let i = 0; i < state.uploaderVideos.length; i += 1) {
     const video = state.uploaderVideos[i];
+    const transcodeStatus = video.transcode_status || "pending";
+    const playable = isVideoPlayable(video);
+    const playbackUrl = getVideoPlaybackUrl(video);
     html += `
       <div class="queue-item">
         <div class="queue-title">
           <strong>${escapeHtml(video.original_filename)}</strong>
           <span class="badge ${getStatusClass(video.status)}">${escapeHtml(videoStatusLabels[video.status] || video.status)}</span>
         </div>
-        <p>${escapeHtml(formatDate(video.created_at))} 上传</p>
+        <p>${escapeHtml(formatDate(video.created_at))} 上传 · ${escapeHtml(transcodeStatusLabels[transcodeStatus] || transcodeStatus)}</p>
         <div class="mini-list">${renderUploaderLinkSummary(video.lyric_links)}</div>
         <div class="queue-actions">
-          <a class="button" href="${escapeHtml(video.file_url)}" target="_blank" rel="noreferrer">查看视频</a>
+          ${playable ? `<a class="button" href="${escapeHtml(playbackUrl)}" target="_blank" rel="noreferrer">查看播放副本</a>` : ""}
         </div>
       </div>
     `;
@@ -741,13 +792,17 @@ function renderPendingQueue() {
   let html = "";
   for (let i = 0; i < state.pendingVideos.length; i += 1) {
     const video = state.pendingVideos[i];
+    const transcodeStatus = video.transcode_status || "pending";
+    const playable = isVideoPlayable(video);
+    const playbackUrl = getVideoPlaybackUrl(video);
     html += `
       <div class="queue-item">
         <strong>${escapeHtml(video.original_filename)}</strong>
         <p>${escapeHtml(video.person_name)} 上传 · ${escapeHtml(renderLinkSummary(video.lyric_links))}</p>
+        <p>转码状态：${escapeHtml(transcodeStatusLabels[transcodeStatus] || transcodeStatus)}</p>
         <div class="queue-actions">
-          <a class="button" href="${escapeHtml(video.file_url)}" target="_blank" rel="noreferrer">查看视频</a>
-          <button type="button" data-action="review-video" data-id="${escapeHtml(video.id)}">通过</button>
+          ${playable ? `<a class="button" href="${escapeHtml(playbackUrl)}" target="_blank" rel="noreferrer">查看播放副本</a>` : ""}
+          <button type="button" data-action="review-video" data-id="${escapeHtml(video.id)}"${playable ? "" : " disabled"}>通过</button>
           <button class="danger" type="button" data-action="reject-video" data-id="${escapeHtml(video.id)}">驳回</button>
         </div>
       </div>
@@ -905,6 +960,16 @@ function appendSelectedFiles(formData) {
   }
 }
 
+// 上传和转码期间锁住表单，避免用户重复提交。
+function setUploadBusy(isBusy, message) {
+  const form = find("#uploadForm");
+  const controls = form.querySelectorAll("input, textarea, button");
+  for (let i = 0; i < controls.length; i += 1) {
+    controls[i].disabled = isBusy;
+  }
+  find("#uploadStatus").textContent = message || "";
+}
+
 // 处理上传表单提交。
 async function handleUploadSubmit(event) {
   event.preventDefault();
@@ -926,17 +991,21 @@ async function handleUploadSubmit(event) {
   formData.append("lyricIds", JSON.stringify(lyricIds));
   appendSelectedFiles(formData);
 
-  find("#uploadStatus").textContent = "上传中...";
-  await requestJson("/api/uploads", withUserHeaders({
-    method: "POST",
-    body: formData
-  }));
-  find("#uploadStatus").textContent = "已上传，等待管理员整理。";
-  find("#uploadForm").reset();
-  await loadPublicOverview();
-  await loadUploaderData();
-  closeUploadSheet();
-  renderAll();
+  setUploadBusy(true, "上传中，上传完成后服务器会继续转码，请不要关闭页面...");
+  try {
+    await requestJson("/api/uploads", withUserHeaders({
+      method: "POST",
+      body: formData
+    }));
+    setUploadBusy(false, "已上传并完成低码率转码，等待管理员整理。");
+    find("#uploadForm").reset();
+    await loadPublicOverview();
+    await loadUploaderData();
+    closeUploadSheet();
+    renderAll();
+  } catch (error) {
+    setUploadBusy(false, `上传或转码失败：${error.message}`);
+  }
 }
 
 // 打开姓名输入抽屉。

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
@@ -22,6 +23,13 @@ const uploadUrlPrefix = "/storage/videos";
 const port = Number(process.env.PORT || 3000);
 const adminUserName = String(process.env.ADMIN_NAME || "raccoon").toLowerCase();
 const maxUploadTestBytes = Number(process.env.MAX_UPLOAD_TEST_BYTES || 1024 * 1024 * 120);
+const ffmpegCommand = process.env.FFMPEG_PATH || "ffmpeg";
+const ffprobeCommand = process.env.FFPROBE_PATH || "ffprobe";
+const playbackVideoBitrate = process.env.PLAYBACK_VIDEO_BITRATE || "1000k";
+const playbackMaxRate = process.env.PLAYBACK_MAX_RATE || "1200k";
+const playbackBufferSize = process.env.PLAYBACK_BUFFER_SIZE || "2400k";
+const playbackAudioBitrate = process.env.PLAYBACK_AUDIO_BITRATE || "96k";
+const playbackMaxDimension = Number(process.env.PLAYBACK_MAX_DIMENSION || 960);
 
 fsSync.mkdirSync(uploadDir, { recursive: true });
 
@@ -120,9 +128,16 @@ function mapTestVideoRow(row) {
   return {
     id: row.id,
     title: row.original_filename,
-    fileUrl: row.file_url,
+    fileUrl: row.playback_file_url,
+    originalFileUrl: row.file_url,
+    playbackFileUrl: row.playback_file_url,
     thumbnailUrl: row.thumbnail_url,
     status: row.status,
+    transcodeStatus: row.transcode_status,
+    transcodeError: row.transcode_error,
+    originalSizeBytes: row.original_size_bytes,
+    playbackSizeBytes: row.playback_size_bytes,
+    playbackBitrate: row.playback_bitrate,
     durationSeconds: row.duration_seconds,
     personName: row.person_name,
     createdAt: row.created_at,
@@ -146,6 +161,231 @@ function logUploadBandwidthTest(request, payload) {
       `remoteAddress=${request.ip || request.socket.remoteAddress || "-"}`
     ].join(" ")
   );
+}
+
+// 用于限制错误输出长度，避免 ffmpeg 大量日志淹没接口响应。
+function appendLimitedText(current, addition, limit = 12000) {
+  const next = `${current}${addition}`;
+  if (next.length <= limit) {
+    return next;
+  }
+  return next.slice(next.length - limit);
+}
+
+// 运行外部媒体工具，并收集必要的 stdout/stderr 诊断信息。
+function runMediaCommand(command, args, options = {}) {
+  return new Promise(function runMediaCommandPromise(resolve, reject) {
+    const child = spawn(command, args, {
+      cwd: projectRoot,
+      stdio: ["ignore", "pipe", "pipe"],
+      ...options
+    });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", function handleStdout(chunk) {
+      stdout = appendLimitedText(stdout, chunk.toString());
+    });
+    child.stderr.on("data", function handleStderr(chunk) {
+      stderr = appendLimitedText(stderr, chunk.toString());
+    });
+    child.on("error", reject);
+    child.on("close", function handleClose(code) {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+      const error = new Error(`${command} 退出码 ${code}: ${stderr || stdout || "无输出"}`);
+      error.stdout = stdout;
+      error.stderr = stderr;
+      reject(error);
+    });
+  });
+}
+
+// 将数值字符串转换为数据库可接受的数字或 null。
+function toNullableNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// 读取视频元数据，用于记录播放副本时长和码率。
+async function probeVideoFile(filePath) {
+  const result = await runMediaCommand(ffprobeCommand, [
+    "-v", "error",
+    "-show_entries", "format=duration,bit_rate",
+    "-of", "json",
+    filePath
+  ]);
+  const payload = JSON.parse(result.stdout || "{}");
+  return {
+    durationSeconds: toNullableNumber(payload.format?.duration),
+    bitrate: toNullableNumber(payload.format?.bit_rate)
+  };
+}
+
+// 根据原始文件名生成同目录下的低码率 MP4 副本文件名。
+function resolvePlaybackFilename(originalFilename) {
+  const parsed = path.parse(originalFilename);
+  return `${parsed.name}-playback.mp4`;
+}
+
+// 将文件访问 URL 转回上传目录中的绝对路径。
+function resolveUploadPathFromUrl(fileUrl) {
+  const prefix = `${uploadUrlPrefix}/`;
+  if (!fileUrl || !fileUrl.startsWith(prefix)) {
+    throw new Error(`无法识别视频文件地址：${fileUrl || "-"}`);
+  }
+  const filename = path.basename(decodeURIComponent(fileUrl.slice(prefix.length)));
+  return path.join(uploadDir, filename);
+}
+
+// 生成低码率播放副本；播放页只使用该副本，不直接播放原始上传文件。
+async function transcodeVideoFile(inputPath, outputPath, label) {
+  const startedAt = process.hrtime.bigint();
+  const scaleFilter = [
+    `w='min(${playbackMaxDimension},iw)'`,
+    `h='min(${playbackMaxDimension},ih)'`,
+    "force_original_aspect_ratio=decrease",
+    "force_divisible_by=2"
+  ].join(":");
+  console.info(`[video-transcode] start label=${label} input=${inputPath} output=${outputPath}`);
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await runMediaCommand(ffmpegCommand, [
+    "-y",
+    "-i", inputPath,
+    "-map", "0:v:0",
+    "-map", "0:a?",
+    "-vf", `scale=${scaleFilter}`,
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-profile:v", "main",
+    "-pix_fmt", "yuv420p",
+    "-b:v", playbackVideoBitrate,
+    "-maxrate", playbackMaxRate,
+    "-bufsize", playbackBufferSize,
+    "-c:a", "aac",
+    "-b:a", playbackAudioBitrate,
+    "-movflags", "+faststart",
+    outputPath
+  ]);
+  const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+  console.info(`[video-transcode] finish label=${label} durationMs=${durationMs.toFixed(1)}`);
+}
+
+// 删除单个路径，清理失败时不覆盖原始业务错误。
+async function cleanupFilePath(filePath) {
+  if (!filePath) {
+    return;
+  }
+  try {
+    await fs.unlink(filePath);
+  } catch (_error) {
+    // 清理失败不覆盖原始业务错误。
+  }
+}
+
+// 上传接口等待转码完成后才创建业务记录，确保新视频一入库就可播放低码率副本。
+async function prepareUploadedVideo(file) {
+  const playbackFilename = resolvePlaybackFilename(file.filename);
+  const playbackPath = path.join(uploadDir, playbackFilename);
+  await transcodeVideoFile(file.path, playbackPath, file.originalname);
+  const [originalStat, playbackStat, metadata] = await Promise.all([
+    fs.stat(file.path),
+    fs.stat(playbackPath),
+    probeVideoFile(playbackPath)
+  ]);
+  return {
+    file,
+    originalFileUrl: `${uploadUrlPrefix}/${file.filename}`,
+    playbackFileUrl: `${uploadUrlPrefix}/${playbackFilename}`,
+    playbackPath,
+    originalSizeBytes: originalStat.size,
+    playbackSizeBytes: playbackStat.size,
+    playbackBitrate: metadata.bitrate,
+    durationSeconds: metadata.durationSeconds
+  };
+}
+
+// 后台补转历史视频，迁移后未生成低码率副本的视频不会被页面播放。
+async function processPendingTranscodes() {
+  const result = await query(`
+    SELECT id::text, file_url, original_filename
+    FROM videos
+    WHERE transcode_status IN ('pending', 'processing', 'failed')
+      AND playback_file_url IS NULL
+      AND status NOT IN ('rejected', 'archived')
+    ORDER BY created_at ASC
+  `);
+
+  for (let i = 0; i < result.rows.length; i += 1) {
+    const video = result.rows[i];
+    const inputPath = resolveUploadPathFromUrl(video.file_url);
+    const playbackFilename = resolvePlaybackFilename(path.basename(inputPath));
+    const playbackPath = path.join(uploadDir, playbackFilename);
+    const playbackFileUrl = `${uploadUrlPrefix}/${playbackFilename}`;
+    await query(
+      `
+        UPDATE videos
+        SET transcode_status = 'processing',
+            transcode_error = '',
+            updated_at = now()
+        WHERE id = $1
+      `,
+      [video.id]
+    );
+    try {
+      await transcodeVideoFile(inputPath, playbackPath, video.original_filename);
+      const [originalStat, playbackStat, metadata] = await Promise.all([
+        fs.stat(inputPath),
+        fs.stat(playbackPath),
+        probeVideoFile(playbackPath)
+      ]);
+      await query(
+        `
+          UPDATE videos
+          SET playback_file_url = $1,
+              transcode_status = 'ready',
+              transcode_error = '',
+              original_size_bytes = $2,
+              playback_size_bytes = $3,
+              playback_bitrate = $4,
+              duration_seconds = COALESCE($5, duration_seconds),
+              transcoded_at = now(),
+              updated_at = now()
+          WHERE id = $6
+        `,
+        [
+          playbackFileUrl,
+          originalStat.size,
+          playbackStat.size,
+          metadata.bitrate,
+          metadata.durationSeconds,
+          video.id
+        ]
+      );
+    } catch (error) {
+      await cleanupFilePath(playbackPath);
+      await query(
+        `
+          UPDATE videos
+          SET transcode_status = 'failed',
+              transcode_error = $1,
+              updated_at = now()
+          WHERE id = $2
+        `,
+        [String(error.message || error).slice(0, 1000), video.id]
+      );
+      console.error(`[video-transcode] failed videoId=${video.id}`, error);
+    }
+  }
+}
+
+// 服务启动后异步补转历史文件，不阻塞正常页面访问。
+function startPendingTranscodeWorker() {
+  processPendingTranscodes().catch(function handlePendingTranscodeError(error) {
+    console.error("[video-transcode] pending worker failed", error);
+  });
 }
 
 // 提取被结构变更影响的关联标识。
@@ -192,14 +432,17 @@ async function getOverviewData(options = {}) {
     ? "video_lyric_links.status = 'active'"
     : "video_lyric_links.status IN ('pending', 'active')";
   const videoStatusCondition = publicOnly
-    ? "videos.status = 'reviewed'"
+    ? "videos.status = 'reviewed' AND videos.transcode_status = 'ready' AND videos.playback_file_url IS NOT NULL"
     : "videos.status NOT IN ('rejected', 'archived')";
+  const coverageVideoStatusCondition = publicOnly
+    ? "coverage_videos.status = 'reviewed' AND coverage_videos.transcode_status = 'ready' AND coverage_videos.playback_file_url IS NOT NULL"
+    : "coverage_videos.status NOT IN ('rejected', 'archived')";
   const statsSql = publicOnly
     ? `
       SELECT
         (SELECT count(*) FROM lyric_units WHERE is_active = true)::int AS lyric_count,
-        (SELECT count(*) FROM videos WHERE status NOT IN ('rejected', 'archived'))::int AS video_count,
-        (SELECT count(DISTINCT person_id) FROM videos WHERE status NOT IN ('rejected', 'archived'))::int AS person_count,
+        (SELECT count(*) FROM videos WHERE status NOT IN ('rejected', 'archived') AND transcode_status = 'ready' AND playback_file_url IS NOT NULL)::int AS video_count,
+        (SELECT count(DISTINCT person_id) FROM videos WHERE status = 'reviewed' AND transcode_status = 'ready' AND playback_file_url IS NOT NULL)::int AS person_count,
         0::int AS pending_count
     `
     : `
@@ -224,7 +467,7 @@ async function getOverviewData(options = {}) {
           ON coverage_videos.id = coverage_links.video_id
         WHERE coverage_links.lyric_unit_id = lyric_units.id
           AND coverage_links.status IN ('pending', 'active')
-          AND coverage_videos.status NOT IN ('rejected', 'archived')
+          AND ${coverageVideoStatusCondition}
       ) AS video_count,
       COALESCE(
         json_agg(
@@ -233,9 +476,16 @@ async function getOverviewData(options = {}) {
             'linkStatus', video_lyric_links.status,
             'videoId', videos.id::text,
             'title', videos.original_filename,
-            'fileUrl', videos.file_url,
+            'fileUrl', videos.playback_file_url,
+            'originalFileUrl', videos.file_url,
+            'playbackFileUrl', videos.playback_file_url,
             'thumbnailUrl', videos.thumbnail_url,
             'videoStatus', videos.status,
+            'transcodeStatus', videos.transcode_status,
+            'transcodeError', videos.transcode_error,
+            'originalSizeBytes', videos.original_size_bytes,
+            'playbackSizeBytes', videos.playback_size_bytes,
+            'playbackBitrate', videos.playback_bitrate,
             'durationSeconds', videos.duration_seconds,
             'personName', persons.display_name
           )
@@ -264,6 +514,13 @@ async function getOverviewData(options = {}) {
       videos.id::text,
       videos.original_filename,
       videos.file_url,
+      videos.playback_file_url,
+      videos.transcode_status,
+      videos.transcode_error,
+      videos.original_size_bytes,
+      videos.playback_size_bytes,
+      videos.playback_bitrate,
+      videos.duration_seconds,
       videos.status,
       videos.created_at,
       persons.display_name AS person_name,
@@ -334,6 +591,13 @@ async function getUploaderData(name) {
         videos.id::text,
         videos.original_filename,
         videos.file_url,
+        videos.playback_file_url,
+        videos.transcode_status,
+        videos.transcode_error,
+        videos.original_size_bytes,
+        videos.playback_size_bytes,
+        videos.playback_bitrate,
+        videos.duration_seconds,
         videos.status,
         videos.created_at,
         videos.updated_at,
@@ -398,8 +662,14 @@ async function getTestVideos() {
       videos.id::text,
       videos.original_filename,
       videos.file_url,
+      videos.playback_file_url,
       videos.thumbnail_url,
       videos.status,
+      videos.transcode_status,
+      videos.transcode_error,
+      videos.original_size_bytes,
+      videos.playback_size_bytes,
+      videos.playback_bitrate,
       videos.duration_seconds,
       videos.created_at,
       videos.updated_at,
@@ -585,24 +855,47 @@ async function findOrCreatePerson(client, payload) {
 // 删除已经落盘但数据库写入失败的上传文件。
 async function cleanupUploadedFiles(files) {
   for (let i = 0; i < files.length; i += 1) {
-    try {
-      await fs.unlink(files[i].path);
-    } catch (_error) {
-      // 清理失败不覆盖原始业务错误。
-    }
+    await cleanupFilePath(files[i].path);
+  }
+}
+
+// 删除已生成的播放副本。
+async function cleanupPreparedVideos(preparedVideos) {
+  for (let i = 0; i < preparedVideos.length; i += 1) {
+    await cleanupFilePath(preparedVideos[i].playbackPath);
   }
 }
 
 // 创建单个视频记录及其歌词关联。
-async function createVideoWithLinks(client, personId, file, lyricIds) {
-  const fileUrl = `${uploadUrlPrefix}/${file.filename}`;
+async function createVideoWithLinks(client, personId, preparedVideo, lyricIds) {
   const insertedVideo = await client.query(
     `
-      INSERT INTO videos (person_id, file_url, original_filename)
-      VALUES ($1, $2, $3)
+      INSERT INTO videos (
+        person_id,
+        file_url,
+        playback_file_url,
+        original_filename,
+        duration_seconds,
+        transcode_status,
+        transcode_error,
+        original_size_bytes,
+        playback_size_bytes,
+        playback_bitrate,
+        transcoded_at
+      )
+      VALUES ($1, $2, $3, $4, $5, 'ready', '', $6, $7, $8, now())
       RETURNING *
     `,
-    [personId, fileUrl, file.originalname]
+    [
+      personId,
+      preparedVideo.originalFileUrl,
+      preparedVideo.playbackFileUrl,
+      preparedVideo.file.originalname,
+      preparedVideo.durationSeconds,
+      preparedVideo.originalSizeBytes,
+      preparedVideo.playbackSizeBytes,
+      preparedVideo.playbackBitrate
+    ]
   );
   const video = insertedVideo.rows[0];
 
@@ -643,12 +936,17 @@ async function handleCreateUpload(request, response, next) {
       return;
     }
 
+    const preparedVideos = [];
+    for (let i = 0; i < files.length; i += 1) {
+      preparedVideos.push(await prepareUploadedVideo(files[i]));
+    }
+
     // 在事务内同时创建参与者、视频和歌词关联。
     const result = await withTransaction(async function createUploadTransaction(client) {
       const person = await findOrCreatePerson(client, request.body);
       const createdVideos = [];
-      for (let i = 0; i < files.length; i += 1) {
-        const video = await createVideoWithLinks(client, person.id, files[i], lyricIds);
+      for (let i = 0; i < preparedVideos.length; i += 1) {
+        const video = await createVideoWithLinks(client, person.id, preparedVideos[i], lyricIds);
         createdVideos.push(video);
       }
       return { person, videos: createdVideos };
@@ -657,6 +955,11 @@ async function handleCreateUpload(request, response, next) {
     response.status(201).json(result);
   } catch (error) {
     await cleanupUploadedFiles(files);
+    await cleanupPreparedVideos(files.map(function mapMissingPreparedVideo(file) {
+      return {
+        playbackPath: path.join(uploadDir, resolvePlaybackFilename(file.filename))
+      };
+    }));
     next(error);
   }
 }
@@ -794,6 +1097,23 @@ async function handleReplaceLyricStructure(request, response, next) {
 // 审核通过视频并激活它的待确认歌词关联。
 async function handleReviewVideo(request, response, next) {
   try {
+    const readiness = await query(
+      `
+        SELECT transcode_status, playback_file_url
+        FROM videos
+        WHERE id = $1
+      `,
+      [request.params.id]
+    );
+    if (readiness.rows.length === 0) {
+      response.status(404).json({ error: "视频不存在" });
+      return;
+    }
+    if (readiness.rows[0].transcode_status !== "ready" || !readiness.rows[0].playback_file_url) {
+      response.status(409).json({ error: "视频还未完成低码率转码，不能审核公开" });
+      return;
+    }
+
     // 在事务内审核视频并激活它的待确认歌词关联。
     const result = await withTransaction(async function reviewVideoTransaction(client) {
       const video = await client.query(
@@ -1007,6 +1327,9 @@ app.get("/test", handleTestPage);
 app.get("*", handleIndexFallback);
 app.use(handleError);
 
-app.listen(port, logServerStart);
+app.listen(port, function handleListen() {
+  logServerStart();
+  startPendingTranscodeWorker();
+});
 
 process.on("SIGTERM", handleSigterm);
