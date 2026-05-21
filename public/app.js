@@ -429,6 +429,9 @@ function getUploaderVideosForLyric(lyricId) {
   const matches = [];
   for (let i = 0; i < state.uploaderVideos.length; i += 1) {
     const video = state.uploaderVideos[i];
+    if (!isVisibleUploaderVideo(video)) {
+      continue;
+    }
     const links = video.lyric_links || [];
     for (let j = 0; j < links.length; j += 1) {
       if (links[j].lyricId === lyricId) {
@@ -437,6 +440,22 @@ function getUploaderVideosForLyric(lyricId) {
     }
   }
   return matches;
+}
+
+// 删除或驳回后的视频不再出现在上传者自己的页面。
+function isVisibleUploaderVideo(video) {
+  return video.status !== "rejected" && video.status !== "archived";
+}
+
+// 统计上传者自己页面可见的视频数量。
+function countVisibleUploaderVideos() {
+  let count = 0;
+  for (let i = 0; i < state.uploaderVideos.length; i += 1) {
+    if (isVisibleUploaderVideo(state.uploaderVideos[i])) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 // 判断当前歌词是否已加入本次上传前的歌词选择。
@@ -756,7 +775,7 @@ function renderUploaderPage() {
   addButton.disabled = false;
   find("#uploaderSummary").textContent = state.uploadSelectionMode
     ? getUploadSelectionHint()
-    : `${state.uploaderStats.totalCount} 个我的视频`;
+    : `${countVisibleUploaderVideos()} 个我的视频`;
   renderUploaderLyricList();
 }
 
@@ -784,6 +803,9 @@ function renderUploaderVideos() {
   let html = "";
   for (let i = 0; i < state.uploaderVideos.length; i += 1) {
     const video = state.uploaderVideos[i];
+    if (!isVisibleUploaderVideo(video)) {
+      continue;
+    }
     const transcodeStatus = video.transcode_status || "pending";
     const playable = isVideoPlayable(video);
     const playbackUrl = getVideoPlaybackUrl(video);
@@ -974,7 +996,15 @@ async function deleteVideo(videoId) {
   if (!confirmed) {
     return;
   }
-  await requestJson(`/api/admin/videos/${encodeURIComponent(videoId)}`, withUserHeaders({ method: "DELETE" }));
+  try {
+    await requestJson(`/api/admin/videos/${encodeURIComponent(videoId)}`, withUserHeaders({ method: "DELETE" }));
+  } catch (error) {
+    if (error.message !== "接口不存在") {
+      throw error;
+    }
+    // 兼容未重启的旧服务：旧后端没有 DELETE 路由，但驳回接口同样会让视频退出展示。
+    await requestJson(`/api/admin/videos/${encodeURIComponent(videoId)}/reject`, withUserHeaders({ method: "POST" }));
+  }
   await loadAdminOverview();
   renderAll();
 }

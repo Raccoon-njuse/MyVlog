@@ -582,8 +582,11 @@ async function getUploaderData(name) {
       JOIN persons ON persons.id = videos.person_id
       LEFT JOIN video_lyric_links ON video_lyric_links.video_id = videos.id
       LEFT JOIN lyric_units ON lyric_units.id = video_lyric_links.lyric_unit_id
-      WHERE lower(persons.name) = lower($1)
-        OR lower(persons.display_name) = lower($1)
+      WHERE (
+          lower(persons.name) = lower($1)
+          OR lower(persons.display_name) = lower($1)
+        )
+        AND videos.status NOT IN ('rejected', 'archived')
       GROUP BY videos.id, persons.display_name
       ORDER BY videos.created_at DESC
     `,
@@ -599,8 +602,11 @@ async function getUploaderData(name) {
         count(*) FILTER (WHERE videos.status = 'rejected')::int AS rejected_count
       FROM videos
       JOIN persons ON persons.id = videos.person_id
-      WHERE lower(persons.name) = lower($1)
-        OR lower(persons.display_name) = lower($1)
+      WHERE (
+          lower(persons.name) = lower($1)
+          OR lower(persons.display_name) = lower($1)
+        )
+        AND videos.status NOT IN ('rejected', 'archived')
     `,
     [name]
   );
