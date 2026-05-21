@@ -22,7 +22,7 @@
       <div class="session-card">
         <span>当前姓名</span>
         <strong id="sessionName">未登录</strong>
-        <button type="button" class="text-button" data-action="logout">清除姓名</button>
+        <button type="button" class="text-button" data-action="logout">退出登录</button>
       </div>
     </aside>
 
@@ -34,11 +34,13 @@
               <span class="mobile-brand">友谊地久天长</span>
               <h1>歌词覆盖</h1>
             </div>
-            <button type="button" class="icon-button" data-action="reload" aria-label="刷新">↻</button>
+            <div class="mobile-actions">
+              <button type="button" class="header-action-button" data-action="open-login">登录</button>
+              <button type="button" class="icon-button" data-action="reload" aria-label="刷新">↻</button>
+            </div>
           </header>
           <div class="mobile-summary" id="visitorSummary">0 句歌词 · 0 个视频</div>
           <div class="mobile-lyric-list" id="visitorLyricList"></div>
-          <button class="mobile-fab" type="button" data-action="open-login" aria-label="输入姓名上传">+</button>
         </section>
       </section>
 
@@ -50,8 +52,9 @@
               <h1>我的歌词</h1>
             </div>
             <div class="mobile-actions">
+              <button type="button" class="header-action-button" id="uploaderAddButton" data-action="open-upload">添加</button>
               <button type="button" class="icon-button" data-action="reload" aria-label="刷新">↻</button>
-              <button type="button" class="icon-button" data-action="logout" aria-label="清除姓名">×</button>
+              <button type="button" class="icon-button" id="uploaderLogoutButton" data-action="logout" aria-label="退出登录">×</button>
             </div>
           </header>
 
@@ -66,7 +69,6 @@
           <section id="uploaderDashboard" hidden>
             <div class="mobile-summary" id="uploaderSummary">0 个我的视频</div>
             <div class="mobile-lyric-list" id="uploaderLyricList"></div>
-            <button class="mobile-fab" type="button" data-action="open-upload" aria-label="上传视频">+</button>
           </section>
         </section>
       </section>
@@ -80,6 +82,7 @@
           <div class="toolbar">
             <button type="button" data-action="reload">刷新</button>
             <a class="button" href="/">查看总览</a>
+            <button type="button" data-action="logout">退出登录</button>
           </div>
         </section>
 
@@ -197,15 +200,15 @@
       <form class="form" id="uploadForm">
         <div class="field">
           <label for="contact">联系方式</label>
-          <input id="contact" name="contact" placeholder="微信 / 手机 / 邮箱">
+          <input id="contact" name="contact" placeholder="可选">
         </div>
         <div class="field">
           <label for="uploadNote">备注</label>
-          <textarea id="uploadNote" name="note" placeholder="例如：唱的是副歌第二遍"></textarea>
+          <textarea id="uploadNote" name="note" placeholder="可选"></textarea>
         </div>
         <div class="field">
-          <label>选择歌词</label>
-          <div class="choice-list" id="uploadChoices"></div>
+          <label>已选择歌词</label>
+          <div class="selected-lyrics" id="uploadSelectedLyrics"></div>
         </div>
         <label class="dropzone">
           <input id="videoFiles" type="file" multiple accept="video/*" required>

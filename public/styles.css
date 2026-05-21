@@ -211,6 +211,28 @@ button.danger {
   line-height: 1;
 }
 
+.header-action-button {
+  min-height: 40px;
+  border-radius: 999px;
+  padding: 0 14px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(31, 42, 36, 0.08);
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.header-action-button.primary {
+  border-color: var(--green);
+  color: #ffffff;
+  background: var(--green);
+}
+
+.header-action-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .mobile-summary {
   margin-bottom: 12px;
   color: var(--muted);
@@ -255,6 +277,14 @@ button.danger {
 
 .mobile-row-block.expanded {
   border-color: rgba(47, 111, 94, 0.32);
+}
+
+.mobile-row-block.selected {
+  border-color: rgba(47, 111, 94, 0.5);
+}
+
+.mobile-row-block.selected .mobile-lyric-row {
+  background: #eef6f2;
 }
 
 .mobile-index {
@@ -304,6 +334,37 @@ button.danger {
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.uploader-lyric-row.selecting {
+  grid-template-columns: 22px 34px minmax(0, 1fr) auto;
+}
+
+.mobile-select-box {
+  position: relative;
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid #9aa79f;
+  border-radius: 5px;
+  background: #ffffff;
+}
+
+.mobile-select-box.checked {
+  border-color: var(--green);
+  background: var(--green);
+}
+
+.mobile-select-box.checked::after {
+  position: absolute;
+  top: 4px;
+  left: 3px;
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid #ffffff;
+  border-bottom: 2px solid #ffffff;
+  content: "";
+  transform: rotate(-45deg);
 }
 
 .inline-video-list {
@@ -773,6 +834,31 @@ h1 {
   background: #ffffff;
   font-size: 13px;
   line-height: 1.35;
+}
+
+.selected-lyrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.selected-lyric-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: #244f44;
+  background: #dfeee7;
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .dropzone {

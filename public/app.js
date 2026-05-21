@@ -21,7 +21,9 @@ const state = {
     rejectedCount: 0
   },
   activeLyricId: null,
-  expandedUploaderLyricId: null
+  expandedUploaderLyricId: null,
+  uploadSelectionMode: false,
+  uploadLyricIds: []
 };
 
 let videoPreviewObserver = null;
@@ -437,6 +439,28 @@ function getUploaderVideosForLyric(lyricId) {
   return matches;
 }
 
+// 判断当前歌词是否已加入本次上传前的歌词选择。
+function isUploadLyricSelected(lyricId) {
+  return state.uploadLyricIds.includes(lyricId);
+}
+
+// 读取本次上传前在主页歌词列表中选中的歌词。
+function getSelectedUploadLyrics() {
+  const lyrics = [];
+  for (let i = 0; i < state.lyrics.length; i += 1) {
+    if (isUploadLyricSelected(state.lyrics[i].id)) {
+      lyrics.push(state.lyrics[i]);
+    }
+  }
+  return lyrics;
+}
+
+// 清空上传前选择态，避免下次上传沿用旧歌词。
+function resetUploadSelection() {
+  state.uploadSelectionMode = false;
+  state.uploadLyricIds = [];
+}
+
 // 按状态返回徽标样式。
 function getStatusClass(status) {
   if (status === "reviewed" || status === "active" || status === "ready") {
@@ -553,12 +577,14 @@ function renderUploaderLyricRow(lyric) {
   const publicCount = countVideosForLyric(lyric);
   const ownMatches = getUploaderVideosForLyric(lyric.id);
   const expanded = lyric.id === state.expandedUploaderLyricId;
+  const selecting = state.uploadSelectionMode;
+  const selected = isUploadLyricSelected(lyric.id);
   const countClass = publicCount === 0 ? " zero" : "";
-  const marker = ownMatches.length > 0
+  const marker = ownMatches.length > 0 && !selecting
     ? `<span class="my-marker">我的 ${ownMatches.length}</span>`
     : "";
   let videosHtml = "";
-  if (expanded) {
+  if (expanded && !selecting) {
     for (let i = 0; i < ownMatches.length; i += 1) {
       videosHtml += renderInlineUploaderVideo(ownMatches[i]);
     }
@@ -567,14 +593,21 @@ function renderUploaderLyricRow(lyric) {
     }
   }
   return `
-    <div class="mobile-row-block${expanded ? " expanded" : ""}">
-      <button type="button" class="mobile-lyric-row" data-action="select-lyric" data-id="${escapeHtml(lyric.id)}">
+    <div class="mobile-row-block${expanded && !selecting ? " expanded" : ""}${selected ? " selected" : ""}">
+      <button
+        type="button"
+        class="mobile-lyric-row uploader-lyric-row${selecting ? " selecting" : ""}${selected ? " selected" : ""}"
+        data-action="${selecting ? "toggle-upload-lyric" : "select-lyric"}"
+        data-id="${escapeHtml(lyric.id)}"
+        ${selecting ? `aria-pressed="${selected ? "true" : "false"}"` : ""}
+      >
+        ${selecting ? `<span class="mobile-select-box${selected ? " checked" : ""}" aria-hidden="true"></span>` : ""}
         <span class="mobile-index">${escapeHtml(lyric.orderIndex)}</span>
         <span class="mobile-lyric-text">${escapeHtml(lyric.text)}</span>
         ${marker}
         <span class="mobile-count${countClass}">${publicCount}</span>
       </button>
-      ${expanded ? `<div class="inline-video-list">${videosHtml}</div>` : ""}
+      ${expanded && !selecting ? `<div class="inline-video-list">${videosHtml}</div>` : ""}
     </div>
   `;
 }
@@ -671,35 +704,40 @@ function renderVisitorPage() {
   renderVisitorLyricList();
 }
 
-// 渲染上传表单里的歌词多选项。
-function renderUploadChoices() {
-  const list = find("#uploadChoices");
+// 渲染上传表单里的已选歌词摘要，歌词选择只在主页列表中完成。
+function renderUploadSelectedLyrics() {
+  const list = find("#uploadSelectedLyrics");
+  const selectedLyrics = getSelectedUploadLyrics();
   let html = "";
-  for (let i = 0; i < state.lyrics.length; i += 1) {
-    const lyric = state.lyrics[i];
-    const checked = lyric.id === state.activeLyricId ? " checked" : "";
+  for (let i = 0; i < selectedLyrics.length; i += 1) {
+    const lyric = selectedLyrics[i];
     html += `
-      <label class="choice">
-        <input type="checkbox" name="lyricIds" value="${escapeHtml(lyric.id)}"${checked}>
-        <span>${escapeHtml(lyric.orderIndex)}. ${escapeHtml(lyric.text)}</span>
-      </label>
+      <span class="selected-lyric-pill">${escapeHtml(lyric.orderIndex)}. ${escapeHtml(lyric.text)}</span>
     `;
   }
-  list.innerHTML = html;
+  list.innerHTML = html || '<span class="hint">请先在歌词列表中选择。</span>';
 }
 
 // 渲染上传者页面。
 function renderUploaderPage() {
   const hasName = Boolean(state.sessionName);
+  const addButton = find("#uploaderAddButton");
+  const logoutButton = find("#uploaderLogoutButton");
   find("#uploaderLoginPanel").hidden = hasName;
   find("#uploaderDashboard").hidden = !hasName;
+  addButton.hidden = !hasName;
+  logoutButton.hidden = !hasName;
   if (!hasName) {
     return;
   }
 
   find("#uploadIdentity").textContent = state.sessionName;
-  find("#uploaderSummary").textContent = `${state.uploaderStats.totalCount} 个我的视频 · ${state.uploaderStats.pendingCount} 个待整理`;
-  renderUploadChoices();
+  addButton.textContent = state.uploadSelectionMode ? "下一步" : "添加";
+  addButton.classList.toggle("primary", state.uploadSelectionMode);
+  addButton.disabled = state.uploadSelectionMode && state.uploadLyricIds.length === 0;
+  find("#uploaderSummary").textContent = state.uploadSelectionMode
+    ? `已选择 ${state.uploadLyricIds.length} 句歌词 · 选择完成后点下一步`
+    : `${state.uploaderStats.totalCount} 个我的视频 · ${state.uploaderStats.pendingCount} 个待整理`;
   renderUploaderLyricList();
 }
 
@@ -944,12 +982,40 @@ async function ignoreRelink(taskId) {
 
 // 从上传表单中收集被选中的歌词标识。
 function collectSelectedLyricIds() {
-  const boxes = document.querySelectorAll('input[name="lyricIds"]:checked');
-  const ids = [];
-  for (let i = 0; i < boxes.length; i += 1) {
-    ids.push(boxes[i].value);
+  return state.uploadLyricIds.slice();
+}
+
+// 进入上传前的歌词选择模式。
+function startUploadSelection() {
+  state.uploadSelectionMode = true;
+  state.uploadLyricIds = [];
+  state.expandedUploaderLyricId = null;
+  renderAll();
+}
+
+// 在主页歌词列表中切换本次上传要关联的歌词。
+function toggleUploadLyric(lyricId) {
+  if (isUploadLyricSelected(lyricId)) {
+    state.uploadLyricIds = state.uploadLyricIds.filter(function keepDifferentId(id) {
+      return id !== lyricId;
+    });
+  } else {
+    state.uploadLyricIds.push(lyricId);
   }
-  return ids;
+  renderAll();
+}
+
+// 顶栏添加按钮：第一次进入选择，选择完成后进入上传表单。
+function handleUploaderAddAction() {
+  if (!state.sessionName) {
+    openLoginSheet();
+    return;
+  }
+  if (!state.uploadSelectionMode) {
+    startUploadSelection();
+    return;
+  }
+  openUploadSheet();
 }
 
 // 把选择的视频文件加入上传表单数据。
@@ -1020,19 +1086,28 @@ function closeLoginSheet() {
   find("#loginSheet").hidden = true;
 }
 
-// 打开上传抽屉；未登录时先要求输入姓名。
+// 打开上传抽屉；歌词必须已经在主页列表里选好。
 function openUploadSheet() {
   if (!state.sessionName) {
     openLoginSheet();
     return;
   }
-  renderUploadChoices();
+  if (state.uploadLyricIds.length === 0) {
+    window.alert("请至少选择一句歌词");
+    return;
+  }
+  state.uploadSelectionMode = false;
+  renderAll();
+  renderUploadSelectedLyrics();
+  find("#uploadStatus").textContent = "";
   find("#uploadSheet").hidden = false;
 }
 
 // 关闭上传抽屉。
 function closeUploadSheet() {
   find("#uploadSheet").hidden = true;
+  resetUploadSelection();
+  renderAll();
 }
 
 // 保存姓名并刷新当前页面。
@@ -1056,7 +1131,7 @@ async function loginWithName(name) {
   await refreshCurrentView();
 }
 
-// 清除当前姓名。
+// 清除当前姓名，并统一回到访客总览。
 async function logout() {
   state.sessionName = "";
   state.uploaderVideos = [];
@@ -1067,7 +1142,14 @@ async function logout() {
     rejectedCount: 0
   };
   state.expandedUploaderLyricId = null;
+  resetUploadSelection();
   window.localStorage.removeItem(SESSION_KEY);
+  closeLoginSheet();
+  find("#uploadSheet").hidden = true;
+  if (state.view !== "visitor") {
+    window.location.assign("/");
+    return;
+  }
   await refreshCurrentView();
 }
 
@@ -1093,6 +1175,11 @@ async function handleDocumentClick(event) {
     return;
   }
 
+  if (action === "toggle-upload-lyric") {
+    toggleUploadLyric(target.dataset.id);
+    return;
+  }
+
   try {
     if (action === "reload") {
       await refreshCurrentView();
@@ -1103,7 +1190,7 @@ async function handleDocumentClick(event) {
     } else if (action === "close-login") {
       closeLoginSheet();
     } else if (action === "open-upload") {
-      openUploadSheet();
+      handleUploaderAddAction();
     } else if (action === "close-upload") {
       closeUploadSheet();
     } else if (action === "save-lyric") {
