@@ -28,6 +28,10 @@ const state = {
   expandedUploaderLyricId: null,
   uploadSelectionMode: false,
   uploadLyricIds: [],
+  musicMode: {
+    enabled: false,
+    playingLyricId: null
+  },
   metronome: {
     bpm: METRONOME_DEFAULT_BPM,
     beatsPerBar: METRONOME_DEFAULT_BEATS,
@@ -600,6 +604,7 @@ function renderAll() {
   } else if (state.view === "admin") {
     renderAdminPage();
   }
+  renderMusicMode();
   prepareVideoPreviews();
 }
 
@@ -706,6 +711,71 @@ function getVideoPlaybackUrl(video) {
     return video.fileUrl || "";
   }
   return "";
+}
+
+// 读取歌词对应的音频地址；音乐模式只播放 LRC 来源音频。
+function getLyricAudioUrl(lyric) {
+  return lyric && lyric.audioUrl ? lyric.audioUrl : "";
+}
+
+// 读取 LRC 中记录的歌词起始时间。
+function getLyricStartTime(lyric) {
+  const seconds = Number(lyric && lyric.startTimeSeconds);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : 0;
+}
+
+// 停止音乐模式播放，并释放当前音频地址。
+function stopMusicPlayback() {
+  const audio = find("#musicAudio");
+  if (!audio) {
+    return;
+  }
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.dataset.sourceUrl = "";
+  audio.load();
+  state.musicMode.playingLyricId = null;
+}
+
+// 切换音乐模式；退出时立即停止音频。
+function toggleMusicMode() {
+  state.musicMode.enabled = !state.musicMode.enabled;
+  if (!state.musicMode.enabled) {
+    stopMusicPlayback();
+  }
+  renderMusicMode();
+}
+
+// 点击某句歌词后，从该 LRC 时间点开始播放对应版本音频。
+async function playMusicLyric(lyricId) {
+  const lyric = getLyricById(lyricId);
+  const audioUrl = getLyricAudioUrl(lyric);
+  if (!lyric || !audioUrl) {
+    return;
+  }
+
+  const audio = find("#musicAudio");
+  if (audio.dataset.sourceUrl !== audioUrl) {
+    audio.pause();
+    audio.src = audioUrl;
+    audio.dataset.sourceUrl = audioUrl;
+  }
+  const startTime = getLyricStartTime(lyric);
+  try {
+    audio.currentTime = startTime;
+  } catch (_error) {
+    audio.addEventListener("loadedmetadata", function seekAfterMetadata() {
+      audio.currentTime = startTime;
+    }, { once: true });
+  }
+  await audio.play();
+  state.musicMode.playingLyricId = lyric.id;
+  renderMusicMode();
+
+  const row = document.querySelector(`[data-music-lyric-id="${lyric.id}"]`);
+  if (row) {
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
 }
 
 // 渲染未转码视频的占位状态，避免页面直接播放原始上传文件。
@@ -849,6 +919,54 @@ function renderVisitorLyricList() {
   find("#visitorLyricList").innerHTML = html || '<div class="inline-empty">暂无歌词。</div>';
 }
 
+// 渲染音乐模式中的单句歌词。
+function renderMusicLyricRow(lyric) {
+  const playing = lyric.id === state.musicMode.playingLyricId;
+  return `
+    <button
+      type="button"
+      class="music-lyric-row${playing ? " playing" : ""}"
+      data-action="play-music-lyric"
+      data-id="${escapeHtml(lyric.id)}"
+      data-music-lyric-id="${escapeHtml(lyric.id)}"
+    >
+      <span class="music-index">${escapeHtml(lyric.orderIndex)}</span>
+      <span class="music-text">${escapeHtml(lyric.text)}</span>
+    </button>
+  `;
+}
+
+// 渲染覆盖式音乐模式，并同步顶栏音乐按钮状态。
+function renderMusicMode() {
+  if (state.view === "admin" && state.musicMode.enabled) {
+    state.musicMode.enabled = false;
+    stopMusicPlayback();
+  }
+  const enabled = state.musicMode.enabled && state.view !== "admin";
+  const panel = find("#musicMode");
+  if (!panel) {
+    return;
+  }
+  panel.hidden = !enabled;
+  document.body.classList.toggle("music-mode-open", enabled);
+
+  const buttons = findAll('[data-action="toggle-music-mode"]');
+  for (let i = 0; i < buttons.length; i += 1) {
+    buttons[i].classList.toggle("active", enabled);
+    buttons[i].setAttribute("aria-pressed", enabled ? "true" : "false");
+  }
+
+  if (!enabled) {
+    return;
+  }
+
+  let html = "";
+  for (let i = 0; i < state.lyrics.length; i += 1) {
+    html += renderMusicLyricRow(state.lyrics[i]);
+  }
+  find("#musicLyricList").innerHTML = html || '<div class="music-empty">暂无歌词</div>';
+}
+
 // 渲染移动端上传者歌词列表。
 function renderUploaderLyricList() {
   let html = "";
@@ -893,7 +1011,7 @@ function renderVideoCard(video) {
 }
 
 // 渲染当前歌词详情。
-function renderDetail(prefix, options = {}) {
+function renderDetail(prefix) {
   const lyric = getLyricById(state.activeLyricId);
   const grid = find(`#${prefix}VideoGrid`);
 
@@ -902,9 +1020,6 @@ function renderDetail(prefix, options = {}) {
     find(`#${prefix}DetailCount`).textContent = "0 个视频";
     find(`#${prefix}DetailStatus`).textContent = "-";
     grid.innerHTML = "";
-    if (options.editable) {
-      find("#adminLyricEditor").value = "";
-    }
     return;
   }
 
@@ -913,9 +1028,6 @@ function renderDetail(prefix, options = {}) {
   find(`#${prefix}DetailCount`).textContent = `${count} 个视频`;
   find(`#${prefix}DetailStatus`).textContent = count > 0 ? "已收集" : "缺素材";
   find(`#${prefix}DetailStatus`).className = `badge ${count > 0 ? "good" : "warn"}`;
-  if (options.editable) {
-    find("#adminLyricEditor").value = lyric.text;
-  }
 
   let html = "";
   for (let i = 0; i < lyric.videos.length; i += 1) {
@@ -1042,9 +1154,8 @@ function renderAdminPage() {
   find("#adminStatVideos").textContent = state.stats.videoCount;
   find("#adminStatPeople").textContent = state.stats.personCount;
   renderLyricList("#adminLyricList");
-  renderDetail("admin", { editable: true });
+  renderDetail("admin");
   renderRelinkQueue();
-  renderStructureEditor();
   renderMetronome();
 }
 
@@ -1106,19 +1217,7 @@ function renderRelinkQueue() {
       </div>
     `;
   }
-  queue.innerHTML = html || '<div class="queue-item"><strong>暂无 Relink 任务</strong><p>结构性歌词修改后会在这里生成任务。</p></div>';
-}
-
-// 渲染整体歌词结构编辑器。
-function renderStructureEditor() {
-  let text = "";
-  for (let i = 0; i < state.lyrics.length; i += 1) {
-    if (i > 0) {
-      text += "\n";
-    }
-    text += state.lyrics[i].text;
-  }
-  find("#structureEditor").value = text;
+  queue.innerHTML = html || '<div class="queue-item"><strong>暂无 Relink 任务</strong><p>LRC 歌词更新后会在这里生成任务。</p></div>';
 }
 
 // 在当前页面展示加载失败信息。
@@ -1133,43 +1232,6 @@ function renderPageError(error) {
   } else {
     find("#adminLoginStatus").textContent = error.message;
   }
-}
-
-// 保存当前选中歌词的普通文字修改。
-async function saveCurrentLyric() {
-  const lyric = getLyricById(state.activeLyricId);
-  if (!lyric) {
-    return;
-  }
-  find("#editStatus").textContent = "保存中...";
-  await requestJson(`/api/admin/lyrics/${encodeURIComponent(lyric.id)}`, withUserHeaders({
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      text: find("#adminLyricEditor").value
-    })
-  }));
-  find("#editStatus").textContent = "已保存文字修改，原有关联保持不变。";
-  await loadAdminOverview();
-  renderAll();
-}
-
-// 保存整体歌词结构修改。
-async function saveStructure() {
-  const confirmed = window.confirm("结构保存会替换当前歌词，并把已有视频关联放入 Relink 暂存区。确定继续？");
-  if (!confirmed) {
-    return;
-  }
-  find("#structureStatus").textContent = "保存中...";
-  const result = await requestJson("/api/admin/lyrics/structure", withUserHeaders({
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ structureText: find("#structureEditor").value })
-  }));
-  find("#structureStatus").textContent = `已保存 ${result.lyricCount} 句歌词，影响 ${result.impactedCount} 条关联。`;
-  state.activeLyricId = null;
-  await loadAdminOverview();
-  renderAll();
 }
 
 // 审核通过指定视频。
@@ -1403,6 +1465,8 @@ async function logout() {
   state.expandedUploaderLyricId = null;
   resetUploadSelection();
   stopMetronome();
+  state.musicMode.enabled = false;
+  stopMusicPlayback();
   window.localStorage.removeItem(SESSION_KEY);
   closeLoginSheet();
   find("#uploadSheet").hidden = true;
@@ -1455,10 +1519,10 @@ async function handleDocumentClick(event) {
       cancelUploadSelection();
     } else if (action === "close-upload") {
       closeUploadSheet();
-    } else if (action === "save-lyric") {
-      await saveCurrentLyric();
-    } else if (action === "save-structure") {
-      await saveStructure();
+    } else if (action === "toggle-music-mode") {
+      toggleMusicMode();
+    } else if (action === "play-music-lyric") {
+      await playMusicLyric(target.dataset.id);
     } else if (action === "toggle-metronome") {
       await toggleMetronome();
     } else if (action === "tap-metronome") {
@@ -1513,6 +1577,12 @@ function handleDocumentChange(event) {
   }
 }
 
+// 音频自然结束后只清除播放态，保留音乐模式继续浏览歌词。
+function handleMusicAudioEnded() {
+  state.musicMode.playingLyricId = null;
+  renderMusicMode();
+}
+
 // 绑定页面事件。
 function bindEvents() {
   document.addEventListener("click", handleDocumentClick);
@@ -1522,6 +1592,7 @@ function bindEvents() {
   find("#adminLoginForm").addEventListener("submit", handleAdminLogin);
   find("#quickLoginForm").addEventListener("submit", handleQuickLogin);
   find("#uploadForm").addEventListener("submit", handleUploadSubmit);
+  find("#musicAudio").addEventListener("ended", handleMusicAudioEnded);
 }
 
 // 初始化前端应用。

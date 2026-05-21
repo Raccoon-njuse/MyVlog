@@ -19,7 +19,12 @@ const configuredUploadDir = process.env.UPLOAD_DIR || "storage/videos";
 const uploadDir = path.isAbsolute(configuredUploadDir)
   ? configuredUploadDir
   : path.join(projectRoot, configuredUploadDir);
+const configuredAudioDir = process.env.AUDIO_DIR || "storage/audios";
+const audioDir = path.isAbsolute(configuredAudioDir)
+  ? configuredAudioDir
+  : path.join(projectRoot, configuredAudioDir);
 const uploadUrlPrefix = "/storage/videos";
+const audioUrlPrefix = "/storage/audios";
 const port = Number(process.env.PORT || 3000);
 const adminUserName = String(process.env.ADMIN_NAME || "raccoon").toLowerCase();
 const maxUploadTestBytes = Number(process.env.MAX_UPLOAD_TEST_BYTES || 1024 * 1024 * 120);
@@ -32,6 +37,20 @@ const playbackAudioBitrate = process.env.PLAYBACK_AUDIO_BITRATE || "96k";
 const playbackMaxDimension = Number(process.env.PLAYBACK_MAX_DIMENSION || 960);
 
 fsSync.mkdirSync(uploadDir, { recursive: true });
+fsSync.mkdirSync(audioDir, { recursive: true });
+
+const lyricSources = [
+  {
+    key: "zh",
+    lrcFilename: "中文版.lrc",
+    audioFilename: "中文版.mp3"
+  },
+  {
+    key: "en",
+    lrcFilename: "英文版.lrc",
+    audioFilename: "英文版.mp3"
+  }
+];
 
 const videoStaticOptions = {
   acceptRanges: true,
@@ -84,6 +103,14 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use("/", express.static(publicDir));
 app.use(uploadUrlPrefix, logVideoAssetRequest, express.static(uploadDir, videoStaticOptions));
+app.use(audioUrlPrefix, express.static(audioDir, {
+  acceptRanges: true,
+  cacheControl: true,
+  maxAge: "1h",
+  setHeaders(response) {
+    response.setHeader("X-Content-Type-Options", "nosniff");
+  }
+}));
 
 // 记录视频静态资源的 Range 请求，便于服务器排查播放卡顿。
 function logVideoAssetRequest(request, response, next) {
@@ -111,6 +138,236 @@ function logVideoAssetRequest(request, response, next) {
   next();
 }
 
+// 将音频文件名转换为前端可访问地址，保留中文文件名的 URL 编码。
+function toAudioUrl(filename) {
+  return `${audioUrlPrefix}/${encodeURIComponent(filename)}`;
+}
+
+// 根据歌词来源标识找到对应的音频文件。
+function getAudioUrlBySourceKey(sourceKey) {
+  const source = lyricSources.find(function matchSource(candidate) {
+    return candidate.key === sourceKey;
+  });
+  return source ? toAudioUrl(source.audioFilename) : "";
+}
+
+// 把 LRC 时间戳转换为秒，保留毫秒精度用于音乐模式跳转。
+function parseLrcTimestamp(minutes, seconds, fraction) {
+  const fractionText = String(fraction || "").padEnd(3, "0").slice(0, 3);
+  return Number(minutes) * 60 + Number(seconds) + Number(fractionText || 0) / 1000;
+}
+
+// 解析单个 LRC 文件；同一行多个时间戳会展开成多句相同歌词。
+function parseLrcContent(content, source) {
+  const lines = String(content || "").split(/\r?\n/);
+  const timestampPattern = /\[(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?\]/g;
+  const entries = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const matches = Array.from(line.matchAll(timestampPattern));
+    if (matches.length === 0) {
+      continue;
+    }
+    const text = line.replace(timestampPattern, "").trim();
+    if (!text) {
+      continue;
+    }
+    for (let j = 0; j < matches.length; j += 1) {
+      entries.push({
+        text,
+        sourceKey: source.key,
+        sourceFile: source.lrcFilename,
+        sourceLineIndex: i + 1,
+        startTimeSeconds: parseLrcTimestamp(matches[j][1], matches[j][2], matches[j][3])
+      });
+    }
+  }
+
+  return entries;
+}
+
+// 读取中英两个 LRC 文件，并生成用于变更判断的文件指纹。
+async function readLyricSourcePayload() {
+  const sourcePayloads = [];
+  const lyrics = [];
+
+  for (let i = 0; i < lyricSources.length; i += 1) {
+    const source = lyricSources[i];
+    const lrcPath = path.join(audioDir, source.lrcFilename);
+    const content = await fs.readFile(lrcPath, "utf8");
+    const entries = parseLrcContent(content, source);
+    if (entries.length === 0) {
+      throw new Error(`${source.lrcFilename} 没有解析到歌词`);
+    }
+    const hash = crypto.createHash("sha256").update(content).digest("hex");
+    const stat = await fs.stat(lrcPath);
+    sourcePayloads.push({
+      sourceKey: source.key,
+      filePath: path.relative(projectRoot, lrcPath),
+      fileHash: hash,
+      fileMtimeMs: Math.round(stat.mtimeMs),
+      lyricCount: entries.length
+    });
+    lyrics.push(...entries);
+  }
+
+  return { sources: sourcePayloads, lyrics };
+}
+
+// 判断当前数据库中的激活歌词是否与 LRC 解析结果一致。
+function areLyricsSameAsLrcRows(rows, lyrics) {
+  if (rows.length !== lyrics.length) {
+    return false;
+  }
+
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    const lyric = lyrics[i];
+    const rowStart = Number(row.start_time_seconds || 0).toFixed(3);
+    const lyricStart = Number(lyric.startTimeSeconds || 0).toFixed(3);
+    if (
+      row.text !== lyric.text ||
+      row.source_key !== lyric.sourceKey ||
+      row.source_file !== lyric.sourceFile ||
+      Number(row.source_line_index) !== lyric.sourceLineIndex ||
+      rowStart !== lyricStart
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// 判断 LRC 文件指纹是否已经完整记录在数据库中。
+function areSourceVersionsCurrent(rows, sources) {
+  if (rows.length !== sources.length) {
+    return false;
+  }
+  const rowByKey = new Map(rows.map(function mapRow(row) {
+    return [row.source_key, row];
+  }));
+  for (let i = 0; i < sources.length; i += 1) {
+    const source = sources[i];
+    const row = rowByKey.get(source.sourceKey);
+    if (!row || row.file_hash !== source.fileHash || Number(row.lyric_count) !== source.lyricCount) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// 把 LRC 解析出的歌词整体写入数据库；任何 LRC 更新都视为需要重新关联。
+async function syncLyricsFromLrcFiles(reason) {
+  const payload = await readLyricSourcePayload();
+  const result = await withTransaction(async function syncLyricsTransaction(client) {
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('myvlog_lrc_sync'))");
+
+    const activeLyrics = await client.query(`
+      SELECT text, source_key, source_file, source_line_index, start_time_seconds
+      FROM lyric_units
+      WHERE is_active = true
+      ORDER BY order_index ASC
+    `);
+    const sourceVersions = await client.query(`
+      SELECT source_key, file_hash, lyric_count
+      FROM lyric_source_versions
+      ORDER BY source_key ASC
+    `);
+
+    const lyricsMatch = areLyricsSameAsLrcRows(activeLyrics.rows, payload.lyrics);
+    const versionsCurrent = areSourceVersionsCurrent(sourceVersions.rows, payload.sources);
+    if (lyricsMatch && versionsCurrent) {
+      return { changed: false, lyricCount: payload.lyrics.length, impactedCount: 0 };
+    }
+
+    const impactedCount = await createRelinkTasksForActiveLinks(
+      client,
+      reason || "LRC 歌词文件更新，需要手动重新关联"
+    );
+
+    await client.query(`
+      UPDATE lyric_units
+      SET is_active = false,
+          updated_at = now()
+      WHERE is_active = true
+    `);
+
+    for (let i = 0; i < payload.lyrics.length; i += 1) {
+      const lyric = payload.lyrics[i];
+      await client.query(
+        `
+          INSERT INTO lyric_units (
+            order_index,
+            text,
+            source_key,
+            source_file,
+            source_line_index,
+            start_time_seconds,
+            version
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, 1)
+        `,
+        [
+          i + 1,
+          lyric.text,
+          lyric.sourceKey,
+          lyric.sourceFile,
+          lyric.sourceLineIndex,
+          lyric.startTimeSeconds
+        ]
+      );
+    }
+
+    for (let i = 0; i < payload.sources.length; i += 1) {
+      const source = payload.sources[i];
+      await client.query(
+        `
+          INSERT INTO lyric_source_versions (
+            source_key,
+            file_path,
+            file_hash,
+            file_mtime_ms,
+            lyric_count,
+            synced_at,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, now(), now())
+          ON CONFLICT (source_key)
+          DO UPDATE SET
+            file_path = EXCLUDED.file_path,
+            file_hash = EXCLUDED.file_hash,
+            file_mtime_ms = EXCLUDED.file_mtime_ms,
+            lyric_count = EXCLUDED.lyric_count,
+            synced_at = now(),
+            updated_at = now()
+        `,
+        [
+          source.sourceKey,
+          source.filePath,
+          source.fileHash,
+          source.fileMtimeMs,
+          source.lyricCount
+        ]
+      );
+    }
+
+    return {
+      changed: true,
+      lyricCount: payload.lyrics.length,
+      impactedCount
+    };
+  });
+
+  if (result.changed) {
+    console.info(`[lyric-sync] synced ${result.lyricCount} lyrics impactedLinks=${result.impactedCount}`);
+  } else {
+    console.info(`[lyric-sync] lyrics already current count=${result.lyricCount}`);
+  }
+  return result;
+}
+
 // 将数据库中的 snake_case 行转换成前端使用的结构。
 function mapLyricRow(row) {
   const videos = row.videos || [];
@@ -118,6 +375,11 @@ function mapLyricRow(row) {
     id: row.id,
     orderIndex: Number(row.order_index),
     text: row.text,
+    sourceKey: row.source_key || "",
+    sourceFile: row.source_file || "",
+    sourceLineIndex: row.source_line_index == null ? null : Number(row.source_line_index),
+    startTimeSeconds: row.start_time_seconds == null ? 0 : Number(row.start_time_seconds),
+    audioUrl: getAudioUrlBySourceKey(row.source_key),
     videoCount: Number(row.video_count ?? videos.length),
     videos
   };
@@ -457,6 +719,10 @@ async function getOverviewData(options = {}) {
       lyric_units.id::text,
       lyric_units.order_index,
       lyric_units.text,
+      lyric_units.source_key,
+      lyric_units.source_file,
+      lyric_units.source_line_index,
+      lyric_units.start_time_seconds,
       (
         SELECT count(DISTINCT coverage_videos.id)::int
         FROM video_lyric_links AS coverage_links
@@ -928,55 +1194,8 @@ async function handleCreateUpload(request, response, next) {
   }
 }
 
-// 更新单句歌词文字，不触发重新关联。
-async function handleUpdateLyric(request, response, next) {
-  try {
-    const text = normalizeText(request.body.text);
-
-    if (!text) {
-      response.status(400).json({ error: "歌词不能为空" });
-      return;
-    }
-
-    const result = await query(
-      `
-        UPDATE lyric_units
-        SET text = $1,
-            updated_at = now()
-        WHERE id = $2
-          AND is_active = true
-        RETURNING id::text, order_index, text
-      `,
-      [text, request.params.id]
-    );
-
-    if (result.rows.length === 0) {
-      response.status(404).json({ error: "歌词不存在" });
-      return;
-    }
-
-    response.json(result.rows[0]);
-  } catch (error) {
-    next(error);
-  }
-}
-
-// 将结构编辑文本解析成一行一句的歌词结构。
-function parseStructureLines(rawText) {
-  const sourceLines = String(rawText || "").split(/\r?\n/);
-  const parsed = [];
-  for (let i = 0; i < sourceLines.length; i += 1) {
-    const line = sourceLines[i].trim();
-    if (!line) {
-      continue;
-    }
-    parsed.push({ text: line });
-  }
-  return parsed;
-}
-
-// 创建因为歌词结构变化产生的重新关联任务。
-async function createRelinkTasksForStructureChange(client, reason) {
+// 创建因为 LRC 歌词来源变化产生的重新关联任务。
+async function createRelinkTasksForActiveLinks(client, reason) {
   const impactedLinks = await client.query(`
     SELECT
       video_lyric_links.id,
@@ -1015,47 +1234,6 @@ async function createRelinkTasksForStructureChange(client, reason) {
   `, [impactedLinks.rows.map(mapLinkId)]);
 
   return impactedLinks.rowCount;
-}
-
-// 整体替换歌词结构，并把旧关联放入 Relink 暂存区。
-async function handleReplaceLyricStructure(request, response, next) {
-  try {
-    const parsedLines = parseStructureLines(request.body.structureText);
-    if (parsedLines.length === 0) {
-      response.status(400).json({ error: "歌词结构不能为空" });
-      return;
-    }
-
-    // 在事务内冻结旧歌词、生成 Relink 任务并插入新歌词。
-    const result = await withTransaction(async function replaceStructureTransaction(client) {
-      const impactedCount = await createRelinkTasksForStructureChange(
-        client,
-        "歌词结构被整体保存，需要手动重新关联"
-      );
-      await client.query(`
-        UPDATE lyric_units
-        SET is_active = false,
-            updated_at = now()
-        WHERE is_active = true
-      `);
-
-      for (let i = 0; i < parsedLines.length; i += 1) {
-        await client.query(
-          `
-            INSERT INTO lyric_units (order_index, text, version)
-            VALUES ($1, $2, 1)
-          `,
-          [i + 1, parsedLines[i].text]
-        );
-      }
-
-      return { impactedCount, lyricCount: parsedLines.length };
-    });
-
-    response.json(result);
-  } catch (error) {
-    next(error);
-  }
 }
 
 // 审核通过视频并激活它的待确认歌词关联。
@@ -1306,10 +1484,72 @@ function logServerStart() {
   console.log(`MyVlog server listening on http://127.0.0.1:${port}`);
 }
 
+let lyricSyncTimer = null;
+let lyricSyncChain = Promise.resolve();
+
+// LRC 文件在服务运行中被替换时，防抖后重新同步并生成 Relink 任务。
+function scheduleLyricSourceSync(reason) {
+  clearExistingTimeout(lyricSyncTimer);
+  lyricSyncTimer = setTimeout(function runScheduledLyricSync() {
+    lyricSyncChain = lyricSyncChain
+      .catch(function ignorePreviousSyncFailure() {
+        return null;
+      })
+      .then(function syncAfterLrcChange() {
+        return syncLyricsFromLrcFiles(reason);
+      })
+      .catch(function logLyricSyncError(error) {
+        console.error("[lyric-sync] failed", error);
+      });
+  }, 500);
+}
+
+// 清理上一次防抖计时器，避免一次文件保存触发多次同步。
+function clearExistingTimeout(timerId) {
+  if (timerId) {
+    clearTimeout(timerId);
+  }
+}
+
+// 监听 LRC 文件变化；部署时即使不重启服务，也会把 LRC 更新视作重新关联触发源。
+function startLyricSourceWatcher() {
+  try {
+    fsSync.watch(audioDir, function handleAudioDirChange(_eventType, filename) {
+      if (!filename || !String(filename).toLowerCase().endsWith(".lrc")) {
+        return;
+      }
+      scheduleLyricSourceSync("LRC 歌词文件更新，需要手动重新关联");
+    });
+  } catch (error) {
+    console.error("[lyric-sync] watcher failed", error);
+  }
+}
+
 // 在收到终止信号时关闭数据库连接并退出。
 async function handleSigterm() {
   await pool.end();
   process.exit(0);
+}
+
+// 启动前先同步 LRC，确保页面上的歌词和音乐模式时间点来自音频目录。
+async function startServer() {
+  await syncLyricsFromLrcFiles("LRC 歌词文件初始化，需要手动重新关联");
+  await new Promise(function listenServer(resolve, reject) {
+    const server = app.listen(port, function handleListen() {
+      resolve(server);
+    });
+    server.on("error", reject);
+  });
+  logServerStart();
+  startLyricSourceWatcher();
+  startPendingTranscodeWorker();
+}
+
+// 输出启动失败原因并关闭数据库连接。
+async function handleStartupError(error) {
+  console.error(error);
+  await pool.end();
+  process.exitCode = 1;
 }
 
 app.get("/api/overview", handleGetPublicOverview);
@@ -1318,15 +1558,11 @@ app.post("/api/test/upload-bandwidth", handleUploadBandwidthTest);
 app.get("/api/uploader/me", handleGetUploaderData);
 app.get("/api/admin/overview", requireAdmin, handleGetAdminOverview);
 app.post("/api/uploads", upload.array("videos", 8), handleCreateUpload);
-app.put("/api/admin/lyrics/structure", requireAdmin, handleReplaceLyricStructure);
-app.patch("/api/admin/lyrics/:id", requireAdmin, handleUpdateLyric);
 app.post("/api/admin/videos/:id/review", requireAdmin, handleReviewVideo);
 app.post("/api/admin/videos/:id/reject", requireAdmin, handleRejectVideo);
 app.delete("/api/admin/videos/:id", requireAdmin, handleDeleteVideo);
 app.post("/api/admin/relink-tasks/:id/resolve", requireAdmin, handleResolveRelinkTask);
 app.post("/api/admin/relink-tasks/:id/ignore", requireAdmin, handleIgnoreRelinkTask);
-app.put("/api/lyrics/structure", requireAdmin, handleReplaceLyricStructure);
-app.patch("/api/lyrics/:id", requireAdmin, handleUpdateLyric);
 app.post("/api/videos/:id/review", requireAdmin, handleReviewVideo);
 app.post("/api/videos/:id/reject", requireAdmin, handleRejectVideo);
 app.delete("/api/videos/:id", requireAdmin, handleDeleteVideo);
@@ -1337,9 +1573,6 @@ app.get("/test", handleTestPage);
 app.get("*", handleIndexFallback);
 app.use(handleError);
 
-app.listen(port, function handleListen() {
-  logServerStart();
-  startPendingTranscodeWorker();
-});
+startServer().catch(handleStartupError);
 
 process.on("SIGTERM", handleSigterm);

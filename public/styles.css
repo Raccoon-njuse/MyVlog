@@ -230,6 +230,29 @@ body[data-view="admin"] .sidebar {
   line-height: 1;
 }
 
+.music-button {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  border-radius: 999px;
+  padding: 0;
+  color: var(--green);
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(31, 42, 36, 0.08);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.music-button.active {
+  border-color: var(--green);
+  color: #ffffff;
+  background: var(--green);
+}
+
 .header-action-button {
   min-height: 40px;
   border-radius: 999px;
@@ -440,6 +463,97 @@ body[data-view="admin"] .sidebar {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+}
+
+body.music-mode-open {
+  overflow: hidden;
+}
+
+.music-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(100%, 480px);
+  margin: 0 auto;
+  color: var(--ink);
+  background: #fbfcfa;
+}
+
+.music-mode[hidden] {
+  display: none;
+}
+
+.music-mode-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid rgba(217, 223, 215, 0.86);
+  background: rgba(251, 252, 250, 0.94);
+  backdrop-filter: blur(18px);
+}
+
+.music-lyric-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y proximity;
+  padding: 16px 16px 40vh;
+}
+
+.music-lyric-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  min-height: 76px;
+  padding: 14px 14px;
+  border: 1px solid rgba(217, 223, 215, 0.92);
+  border-radius: 14px;
+  color: var(--ink);
+  background: #ffffff;
+  text-align: left;
+  scroll-snap-align: center;
+  box-shadow: 0 10px 26px rgba(31, 42, 36, 0.06);
+}
+
+.music-lyric-row.playing {
+  border-color: rgba(47, 111, 94, 0.48);
+  background: #eef6f2;
+  box-shadow: inset 4px 0 0 var(--green), 0 10px 26px rgba(31, 42, 36, 0.06);
+}
+
+.music-index {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--green);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.music-text {
+  min-width: 0;
+  font-size: 20px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.music-empty {
+  padding: 16px;
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .mobile-fab {
