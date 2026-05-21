@@ -866,7 +866,7 @@ async function cleanupPreparedVideos(preparedVideos) {
   }
 }
 
-// 创建单个视频记录及其歌词关联。
+// 创建单个视频记录及可选歌词关联；无关联的视频会作为花絮进入待整理。
 async function createVideoWithLinks(client, personId, preparedVideo, lyricIds) {
   const insertedVideo = await client.query(
     `
@@ -921,12 +921,6 @@ async function handleCreateUpload(request, response, next) {
 
     if (!name) {
       response.status(400).json({ error: "请填写姓名" });
-      await cleanupUploadedFiles(files);
-      return;
-    }
-
-    if (lyricIds.length === 0) {
-      response.status(400).json({ error: "请至少选择一句歌词" });
       await cleanupUploadedFiles(files);
       return;
     }

@@ -181,6 +181,11 @@ button.danger {
   margin: 2px 0 0;
   font-size: 26px;
   line-height: 1.12;
+  overflow-wrap: anywhere;
+}
+
+.mobile-header > div:first-child {
+  min-width: 0;
 }
 
 .mobile-brand {
@@ -193,6 +198,8 @@ button.danger {
 .mobile-actions {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
+  align-items: center;
 }
 
 .icon-button {

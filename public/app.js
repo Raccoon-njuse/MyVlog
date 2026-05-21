@@ -715,7 +715,16 @@ function renderUploadSelectedLyrics() {
       <span class="selected-lyric-pill">${escapeHtml(lyric.orderIndex)}. ${escapeHtml(lyric.text)}</span>
     `;
   }
-  list.innerHTML = html || '<span class="hint">请先在歌词列表中选择。</span>';
+  list.innerHTML = html || '<span class="hint">未绑定歌词，将作为花絮提交。</span>';
+}
+
+// 返回上传选择模式里的引导文字。
+function getUploadSelectionHint() {
+  const selectedCount = state.uploadLyricIds.length;
+  if (selectedCount === 0) {
+    return "未选择歌词；点击下一步将作为花絮提交";
+  }
+  return `已选 ${selectedCount} 句歌词；点击下一步继续上传`;
 }
 
 // 渲染上传者页面。
@@ -723,20 +732,22 @@ function renderUploaderPage() {
   const hasName = Boolean(state.sessionName);
   const addButton = find("#uploaderAddButton");
   const logoutButton = find("#uploaderLogoutButton");
+  const cancelSelectionButton = find("#uploaderCancelSelectionButton");
   find("#uploaderLoginPanel").hidden = hasName;
   find("#uploaderDashboard").hidden = !hasName;
   addButton.hidden = !hasName;
-  logoutButton.hidden = !hasName;
+  logoutButton.hidden = !hasName || state.uploadSelectionMode;
+  cancelSelectionButton.hidden = !hasName || !state.uploadSelectionMode;
   if (!hasName) {
     return;
   }
 
-  find("#uploadIdentity").textContent = state.sessionName;
-  addButton.textContent = state.uploadSelectionMode ? "下一步" : "添加";
+  find("#uploaderGreeting").textContent = `你好，${state.sessionName}`;
+  addButton.textContent = state.uploadSelectionMode ? "下一步" : "添加视频";
   addButton.classList.toggle("primary", state.uploadSelectionMode);
-  addButton.disabled = state.uploadSelectionMode && state.uploadLyricIds.length === 0;
+  addButton.disabled = false;
   find("#uploaderSummary").textContent = state.uploadSelectionMode
-    ? `已选择 ${state.uploadLyricIds.length} 句歌词 · 选择完成后点下一步`
+    ? getUploadSelectionHint()
     : `${state.uploaderStats.totalCount} 个我的视频 · ${state.uploaderStats.pendingCount} 个待整理`;
   renderUploaderLyricList();
 }
@@ -1005,6 +1016,12 @@ function toggleUploadLyric(lyricId) {
   renderAll();
 }
 
+// 取消当前上传前的歌词选择状态。
+function cancelUploadSelection() {
+  resetUploadSelection();
+  renderAll();
+}
+
 // 顶栏添加按钮：第一次进入选择，选择完成后进入上传表单。
 function handleUploaderAddAction() {
   if (!state.sessionName) {
@@ -1045,10 +1062,7 @@ async function handleUploadSubmit(event) {
   }
 
   const lyricIds = collectSelectedLyricIds();
-  if (lyricIds.length === 0) {
-    window.alert("请至少选择一句歌词");
-    return;
-  }
+  const isOuttakeUpload = lyricIds.length === 0;
 
   const formData = new FormData();
   formData.append("name", state.sessionName);
@@ -1063,7 +1077,9 @@ async function handleUploadSubmit(event) {
       method: "POST",
       body: formData
     }));
-    setUploadBusy(false, "已上传并完成低码率转码，等待管理员整理。");
+    setUploadBusy(false, isOuttakeUpload
+      ? "已作为花絮上传并完成低码率转码，等待管理员整理。"
+      : "已上传并完成低码率转码，等待管理员整理。");
     find("#uploadForm").reset();
     await loadPublicOverview();
     await loadUploaderData();
@@ -1086,14 +1102,10 @@ function closeLoginSheet() {
   find("#loginSheet").hidden = true;
 }
 
-// 打开上传抽屉；歌词必须已经在主页列表里选好。
+// 打开上传抽屉；没有选择歌词时按花絮提交。
 function openUploadSheet() {
   if (!state.sessionName) {
     openLoginSheet();
-    return;
-  }
-  if (state.uploadLyricIds.length === 0) {
-    window.alert("请至少选择一句歌词");
     return;
   }
   state.uploadSelectionMode = false;
@@ -1191,6 +1203,8 @@ async function handleDocumentClick(event) {
       closeLoginSheet();
     } else if (action === "open-upload") {
       handleUploaderAddAction();
+    } else if (action === "cancel-upload-selection") {
+      cancelUploadSelection();
     } else if (action === "close-upload") {
       closeUploadSheet();
     } else if (action === "save-lyric") {

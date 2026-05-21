@@ -31,12 +31,10 @@
         <section class="mobile-screen">
           <header class="mobile-header">
             <div>
-              <span class="mobile-brand">友谊地久天长</span>
-              <h1>歌词覆盖</h1>
+              <h1>友谊地久天长</h1>
             </div>
             <div class="mobile-actions">
               <button type="button" class="header-action-button" data-action="open-login">登录</button>
-              <button type="button" class="icon-button" data-action="reload" aria-label="刷新">↻</button>
             </div>
           </header>
           <div class="mobile-summary" id="visitorSummary">0 句歌词 · 0 个视频</div>
@@ -48,13 +46,12 @@
         <section class="mobile-screen">
           <header class="mobile-header">
             <div>
-              <span class="mobile-brand" id="uploadIdentity">未登录</span>
-              <h1>我的歌词</h1>
+              <h1 id="uploaderGreeting">你好</h1>
             </div>
             <div class="mobile-actions">
-              <button type="button" class="header-action-button" id="uploaderAddButton" data-action="open-upload">添加</button>
-              <button type="button" class="icon-button" data-action="reload" aria-label="刷新">↻</button>
-              <button type="button" class="icon-button" id="uploaderLogoutButton" data-action="logout" aria-label="退出登录">×</button>
+              <button type="button" class="header-action-button" id="uploaderAddButton" data-action="open-upload">添加视频</button>
+              <button type="button" class="icon-button" id="uploaderCancelSelectionButton" data-action="cancel-upload-selection" aria-label="取消选择歌词" hidden>×</button>
+              <button type="button" class="header-action-button" id="uploaderLogoutButton" data-action="logout">退出登录</button>
             </div>
           </header>
 
