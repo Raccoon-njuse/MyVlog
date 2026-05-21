@@ -102,6 +102,40 @@
             <div class="stat"><span>参与人数</span><strong id="adminStatPeople">0</strong></div>
           </section>
 
+          <section class="panel metronome-panel" id="metronomePanel" aria-labelledby="metronomeTitle">
+            <header class="panel-header">
+              <h2 id="metronomeTitle">节拍器</h2>
+              <span id="metronomeTempoLabel">90 BPM</span>
+            </header>
+            <div class="metronome-body">
+              <div class="metronome-display" aria-live="polite">
+                <div class="beat-dots" id="metronomeBeatDots" aria-hidden="true"></div>
+                <strong id="metronomeBeatLabel">准备</strong>
+              </div>
+              <div class="metronome-controls">
+                <div class="field metronome-bpm-field">
+                  <label for="metronomeBpmInput">速度 BPM</label>
+                  <input id="metronomeBpmInput" type="number" min="40" max="220" step="1" value="90" inputmode="numeric">
+                </div>
+                <input class="metronome-range" id="metronomeBpmRange" type="range" min="40" max="220" step="1" value="90" aria-label="节拍器速度">
+                <div class="field metronome-beat-field">
+                  <label for="metronomeBeatsInput">每小节</label>
+                  <select id="metronomeBeatsInput">
+                    <option value="2">2 拍</option>
+                    <option value="3">3 拍</option>
+                    <option value="4" selected>4 拍</option>
+                    <option value="6">6 拍</option>
+                  </select>
+                </div>
+              </div>
+              <div class="toolbar metronome-actions">
+                <button class="primary" type="button" data-action="toggle-metronome" id="metronomeToggle">开始</button>
+                <button type="button" data-action="tap-metronome">敲速度</button>
+              </div>
+              <span class="status-text" id="metronomeStatus">准备就绪</span>
+            </div>
+          </section>
+
           <section class="workbench admin-workbench">
             <article class="panel">
               <header class="panel-header">

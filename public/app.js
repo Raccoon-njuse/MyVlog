@@ -1,5 +1,9 @@
 const ADMIN_NAME = "raccoon";
 const SESSION_KEY = "myvlog.sessionName";
+const METRONOME_MIN_BPM = 40;
+const METRONOME_MAX_BPM = 220;
+const METRONOME_DEFAULT_BPM = 90;
+const METRONOME_DEFAULT_BEATS = 4;
 
 const state = {
   view: resolveView(),
@@ -23,7 +27,17 @@ const state = {
   activeLyricId: null,
   expandedUploaderLyricId: null,
   uploadSelectionMode: false,
-  uploadLyricIds: []
+  uploadLyricIds: [],
+  metronome: {
+    bpm: METRONOME_DEFAULT_BPM,
+    beatsPerBar: METRONOME_DEFAULT_BEATS,
+    currentBeat: 0,
+    running: false,
+    intervalId: null,
+    audioContext: null,
+    tapTimes: [],
+    status: "准备就绪"
+  }
 };
 
 let videoPreviewObserver = null;
@@ -106,6 +120,191 @@ function escapeHtml(value) {
 // 判断当前姓名是否是管理员姓名。
 function isAdminSession() {
   return normalizeText(state.sessionName).toLowerCase() === ADMIN_NAME;
+}
+
+// 把节拍器速度限制在录制时常用且浏览器定时器稳定的范围内。
+function clampMetronomeBpm(value) {
+  const bpm = Math.round(Number(value));
+  if (!Number.isFinite(bpm)) {
+    return state.metronome.bpm;
+  }
+  return Math.min(METRONOME_MAX_BPM, Math.max(METRONOME_MIN_BPM, bpm));
+}
+
+// 根据当前 BPM 计算每拍间隔。
+function getMetronomeIntervalMs() {
+  return 60000 / state.metronome.bpm;
+}
+
+// 初始化浏览器音频上下文，必须由管理员点击按钮后触发。
+async function ensureMetronomeAudioContext() {
+  const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextConstructor) {
+    throw new Error("当前浏览器不支持网页音频。");
+  }
+  if (!state.metronome.audioContext) {
+    state.metronome.audioContext = new AudioContextConstructor();
+  }
+  if (state.metronome.audioContext.state === "suspended") {
+    await state.metronome.audioContext.resume();
+  }
+}
+
+// 播放一个短促节拍音，第一拍使用更高音量和频率作为重拍。
+function playMetronomeTick(beatNumber) {
+  const context = state.metronome.audioContext;
+  if (!context) {
+    return;
+  }
+
+  const now = context.currentTime;
+  const accented = beatNumber === 1;
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+
+  oscillator.type = "sine";
+  oscillator.frequency.setValueAtTime(accented ? 1320 : 880, now);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(accented ? 0.26 : 0.18, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
+
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.start(now);
+  oscillator.stop(now + 0.09);
+}
+
+// 重新创建定时器，让运行中的节拍器立刻响应速度变化。
+function restartMetronomeTimer() {
+  if (!state.metronome.running) {
+    return;
+  }
+  window.clearInterval(state.metronome.intervalId);
+  state.metronome.intervalId = window.setInterval(runMetronomeBeat, getMetronomeIntervalMs());
+}
+
+// 推进下一拍并刷新可视化状态。
+function runMetronomeBeat() {
+  if (!state.metronome.running) {
+    return;
+  }
+  state.metronome.currentBeat = (state.metronome.currentBeat % state.metronome.beatsPerBar) + 1;
+  playMetronomeTick(state.metronome.currentBeat);
+  renderMetronome();
+}
+
+// 启动管理员页节拍器。
+async function startMetronome() {
+  await ensureMetronomeAudioContext();
+  if (state.metronome.running) {
+    return;
+  }
+  state.metronome.running = true;
+  state.metronome.currentBeat = 0;
+  state.metronome.status = "播放中";
+  runMetronomeBeat();
+  restartMetronomeTimer();
+  renderMetronome();
+}
+
+// 停止管理员页节拍器并清理定时器。
+function stopMetronome() {
+  window.clearInterval(state.metronome.intervalId);
+  state.metronome.intervalId = null;
+  state.metronome.running = false;
+  state.metronome.currentBeat = 0;
+  state.metronome.status = "已停止";
+  renderMetronome();
+}
+
+// 切换节拍器播放状态。
+async function toggleMetronome() {
+  if (state.metronome.running) {
+    stopMetronome();
+    return;
+  }
+  await startMetronome();
+}
+
+// 设置节拍器速度，并同步数字输入、滑杆和运行中的定时器。
+function setMetronomeBpm(value, statusText) {
+  const bpm = clampMetronomeBpm(value);
+  state.metronome.bpm = bpm;
+  state.metronome.status = statusText || `速度 ${bpm} BPM`;
+  restartMetronomeTimer();
+  renderMetronome();
+}
+
+// 设置每小节拍数，超过新范围的当前拍会从下一拍重新开始。
+function setMetronomeBeats(value) {
+  const beatsPerBar = Number(value);
+  state.metronome.beatsPerBar = [2, 3, 4, 6].includes(beatsPerBar)
+    ? beatsPerBar
+    : METRONOME_DEFAULT_BEATS;
+  if (state.metronome.currentBeat > state.metronome.beatsPerBar) {
+    state.metronome.currentBeat = 0;
+  }
+  state.metronome.status = `${state.metronome.beatsPerBar} 拍循环`;
+  renderMetronome();
+}
+
+// 根据连续敲击间隔估算 BPM，方便管理员跟着参考音频快速定速。
+function tapMetronomeTempo() {
+  const now = window.performance.now();
+  state.metronome.tapTimes = state.metronome.tapTimes
+    .filter(function keepRecentTap(time) {
+      return now - time < 2500;
+    })
+    .slice(-5);
+  state.metronome.tapTimes.push(now);
+
+  if (state.metronome.tapTimes.length < 2) {
+    state.metronome.status = "再敲一次设置速度";
+    renderMetronome();
+    return;
+  }
+
+  const intervals = [];
+  for (let i = 1; i < state.metronome.tapTimes.length; i += 1) {
+    intervals.push(state.metronome.tapTimes[i] - state.metronome.tapTimes[i - 1]);
+  }
+  const averageInterval = intervals.reduce(function sum(total, interval) {
+    return total + interval;
+  }, 0) / intervals.length;
+  const bpm = clampMetronomeBpm(60000 / averageInterval);
+  setMetronomeBpm(bpm, `已按敲击速度设为 ${bpm} BPM`);
+}
+
+// 渲染节拍器的控制值、当前拍和状态文案。
+function renderMetronome() {
+  const bpmInput = find("#metronomeBpmInput");
+  if (!bpmInput) {
+    return;
+  }
+
+  const metronome = state.metronome;
+  if (document.activeElement !== bpmInput) {
+    bpmInput.value = metronome.bpm;
+  }
+  find("#metronomeBpmRange").value = metronome.bpm;
+  find("#metronomeBeatsInput").value = metronome.beatsPerBar;
+  find("#metronomeTempoLabel").textContent = `${metronome.bpm} BPM`;
+  find("#metronomeToggle").textContent = metronome.running ? "停止" : "开始";
+  find("#metronomeBeatLabel").textContent = metronome.running
+    ? `${metronome.currentBeat || 1} / ${metronome.beatsPerBar}`
+    : "准备";
+  find("#metronomeStatus").textContent = metronome.status;
+
+  let dots = "";
+  for (let beat = 1; beat <= metronome.beatsPerBar; beat += 1) {
+    const classes = [
+      "beat-dot",
+      beat === 1 ? "accent" : "",
+      metronome.running && beat === metronome.currentBeat ? "active" : ""
+    ].filter(Boolean).join(" ");
+    dots += `<span class="${classes}"></span>`;
+  }
+  find("#metronomeBeatDots").innerHTML = dots;
 }
 
 // 把 TimeRanges 转成紧凑字符串，便于排查卡顿时是否已经缓冲到当前位置。
@@ -846,6 +1045,7 @@ function renderAdminPage() {
   renderDetail("admin", { editable: true });
   renderRelinkQueue();
   renderStructureEditor();
+  renderMetronome();
 }
 
 // 渲染待整理视频队列中的歌词摘要。
@@ -1202,6 +1402,7 @@ async function logout() {
   };
   state.expandedUploaderLyricId = null;
   resetUploadSelection();
+  stopMetronome();
   window.localStorage.removeItem(SESSION_KEY);
   closeLoginSheet();
   find("#uploadSheet").hidden = true;
@@ -1258,6 +1459,10 @@ async function handleDocumentClick(event) {
       await saveCurrentLyric();
     } else if (action === "save-structure") {
       await saveStructure();
+    } else if (action === "toggle-metronome") {
+      await toggleMetronome();
+    } else if (action === "tap-metronome") {
+      tapMetronomeTempo();
     } else if (action === "review-video") {
       await reviewVideo(target.dataset.id);
     } else if (action === "reject-video") {
@@ -1292,9 +1497,27 @@ async function handleQuickLogin(event) {
   await loginWithName(find("#quickLoginName").value);
 }
 
+// 处理节拍器滑杆的即时速度调整。
+function handleDocumentInput(event) {
+  if (event.target.id === "metronomeBpmRange") {
+    setMetronomeBpm(event.target.value);
+  }
+}
+
+// 处理节拍器数字输入和拍号选择。
+function handleDocumentChange(event) {
+  if (event.target.id === "metronomeBpmInput") {
+    setMetronomeBpm(event.target.value);
+  } else if (event.target.id === "metronomeBeatsInput") {
+    setMetronomeBeats(event.target.value);
+  }
+}
+
 // 绑定页面事件。
 function bindEvents() {
   document.addEventListener("click", handleDocumentClick);
+  document.addEventListener("input", handleDocumentInput);
+  document.addEventListener("change", handleDocumentChange);
   find("#uploaderLoginForm").addEventListener("submit", handleUploaderLogin);
   find("#adminLoginForm").addEventListener("submit", handleAdminLogin);
   find("#quickLoginForm").addEventListener("submit", handleQuickLogin);

@@ -595,6 +595,86 @@ h1 {
   font-size: 26px;
 }
 
+.metronome-panel {
+  margin-bottom: 18px;
+}
+
+.metronome-body {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.8fr) minmax(280px, 1.4fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 16px;
+}
+
+.metronome-display {
+  display: grid;
+  gap: 8px;
+}
+
+.beat-dots {
+  display: flex;
+  gap: 7px;
+  min-height: 18px;
+  align-items: center;
+}
+
+.beat-dot {
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(47, 111, 94, 0.28);
+  border-radius: 50%;
+  background: #dfe8df;
+}
+
+.beat-dot.active {
+  border-color: var(--green);
+  background: var(--green);
+  box-shadow: 0 0 0 5px rgba(47, 111, 94, 0.12);
+}
+
+.beat-dot.accent {
+  width: 16px;
+  height: 16px;
+}
+
+.metronome-display strong {
+  font-size: 22px;
+}
+
+.metronome-controls {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.55fr) minmax(160px, 1fr) minmax(100px, 0.55fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.metronome-bpm-field input,
+.metronome-beat-field select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: #ffffff;
+}
+
+.metronome-range {
+  width: 100%;
+  min-height: 40px;
+  accent-color: var(--green);
+}
+
+.metronome-actions {
+  justify-content: flex-end;
+}
+
+.metronome-body .status-text {
+  grid-column: 1 / -1;
+  min-height: 18px;
+}
+
 .workbench {
   display: grid;
   grid-template-columns: minmax(260px, 0.95fr) minmax(360px, 1.35fr) minmax(260px, 0.85fr);
@@ -991,7 +1071,9 @@ h1 {
 
 @media (max-width: 1180px) {
   .workbench,
-  .uploader-grid {
+  .uploader-grid,
+  .metronome-body,
+  .metronome-controls {
     grid-template-columns: 1fr;
   }
 
