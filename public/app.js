@@ -395,8 +395,12 @@ function renderAll() {
   prepareVideoPreviews();
 }
 
-// 统计某句歌词的可展示视频数量。
+// 统计某句歌词的覆盖数量；访客页会包含待审核素材的占位数。
 function countVideosForLyric(lyric) {
+  const count = Number(lyric.videoCount);
+  if (Number.isFinite(count)) {
+    return count;
+  }
   return lyric.videos ? lyric.videos.length : 0;
 }
 

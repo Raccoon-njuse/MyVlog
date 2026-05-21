@@ -104,11 +104,13 @@ function logVideoAssetRequest(request, response, next) {
 
 // 将数据库中的 snake_case 行转换成前端使用的结构。
 function mapLyricRow(row) {
+  const videos = row.videos || [];
   return {
     id: row.id,
     orderIndex: Number(row.order_index),
     text: row.text,
-    videos: row.videos || []
+    videoCount: Number(row.video_count ?? videos.length),
+    videos
   };
 }
 
@@ -162,8 +164,8 @@ async function getOverviewData(options = {}) {
     ? `
       SELECT
         (SELECT count(*) FROM lyric_units WHERE is_active = true)::int AS lyric_count,
-        (SELECT count(*) FROM videos WHERE status = 'reviewed')::int AS video_count,
-        (SELECT count(DISTINCT person_id) FROM videos WHERE status = 'reviewed')::int AS person_count,
+        (SELECT count(*) FROM videos WHERE status NOT IN ('rejected', 'archived'))::int AS video_count,
+        (SELECT count(DISTINCT person_id) FROM videos WHERE status NOT IN ('rejected', 'archived'))::int AS person_count,
         0::int AS pending_count
     `
     : `
@@ -181,6 +183,15 @@ async function getOverviewData(options = {}) {
       lyric_units.id::text,
       lyric_units.order_index,
       lyric_units.text,
+      (
+        SELECT count(DISTINCT coverage_videos.id)::int
+        FROM video_lyric_links AS coverage_links
+        JOIN videos AS coverage_videos
+          ON coverage_videos.id = coverage_links.video_id
+        WHERE coverage_links.lyric_unit_id = lyric_units.id
+          AND coverage_links.status IN ('pending', 'active')
+          AND coverage_videos.status NOT IN ('rejected', 'archived')
+      ) AS video_count,
       COALESCE(
         json_agg(
           json_build_object(
