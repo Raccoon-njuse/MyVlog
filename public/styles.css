@@ -66,6 +66,14 @@ button.danger {
   min-height: 100vh;
 }
 
+body[data-view="admin"] .app-shell {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body[data-view="admin"] .sidebar {
+  display: none;
+}
+
 .sidebar {
   padding: 24px 18px;
   border-right: 1px solid var(--line);
@@ -562,7 +570,7 @@ h1 {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -805,6 +813,10 @@ h1 {
   font-size: 12px;
 }
 
+.video-card-actions {
+  margin-top: 4px;
+}
+
 .side-stack {
   display: grid;
   gap: 14px;
@@ -944,6 +956,10 @@ h1 {
   grid-template-columns: 1fr 1fr;
   gap: 14px;
   margin-top: 14px;
+}
+
+#adminQueues {
+  grid-template-columns: 1fr;
 }
 
 .structure-panel {

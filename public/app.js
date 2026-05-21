@@ -404,7 +404,7 @@ function renderAll() {
   prepareVideoPreviews();
 }
 
-// 统计某句歌词的覆盖数量；访客页会包含待审核素材的占位数。
+// 统计某句歌词的覆盖数量；访客页只展示后端返回的公开可播放素材。
 function countVideosForLyric(lyric) {
   const count = Number(lyric.videoCount);
   if (Number.isFinite(count)) {
@@ -645,6 +645,13 @@ function renderVideoCard(video) {
   const status = video.transcodeStatus || "pending";
   const playable = isVideoPlayable(video);
   const playbackUrl = getVideoPlaybackUrl(video);
+  const deleteButton = video.videoId
+    ? `
+      <div class="queue-actions video-card-actions">
+        <button class="danger" type="button" data-action="delete-video" data-id="${escapeHtml(video.videoId)}">删除视频</button>
+      </div>
+    `
+    : "";
   return `
     <article class="video-card">
       ${playable ? `
@@ -661,6 +668,7 @@ function renderVideoCard(video) {
       <div class="video-body">
         <strong>${escapeHtml(video.title)}</strong>
         <span>${escapeHtml(video.personName)} · ${escapeHtml(videoStatusLabels[video.videoStatus] || video.videoStatus)} · ${escapeHtml(transcodeStatusLabels[status] || status)} · ${escapeHtml(linkStatusLabels[video.linkStatus] || video.linkStatus)}</span>
+        ${deleteButton}
       </div>
     </article>
   `;
@@ -748,7 +756,7 @@ function renderUploaderPage() {
   addButton.disabled = false;
   find("#uploaderSummary").textContent = state.uploadSelectionMode
     ? getUploadSelectionHint()
-    : `${state.uploaderStats.totalCount} 个我的视频 · ${state.uploaderStats.pendingCount} 个待整理`;
+    : `${state.uploaderStats.totalCount} 个我的视频`;
   renderUploaderLyricList();
 }
 
@@ -812,10 +820,8 @@ function renderAdminPage() {
   find("#adminStatLyrics").textContent = state.stats.lyricCount;
   find("#adminStatVideos").textContent = state.stats.videoCount;
   find("#adminStatPeople").textContent = state.stats.personCount;
-  find("#adminStatPending").textContent = state.stats.pendingCount;
   renderLyricList("#adminLyricList");
   renderDetail("admin", { editable: true });
-  renderPendingQueue();
   renderRelinkQueue();
   renderStructureEditor();
 }
@@ -901,7 +907,7 @@ function renderPageError(error) {
   } else if (state.view === "uploader") {
     find("#uploaderLyricList").innerHTML = `<div class="inline-empty">加载失败：${message}</div>`;
   } else if (state.view === "admin" && isAdminSession()) {
-    find("#pendingQueue").innerHTML = `<div class="queue-item"><strong>加载失败</strong><p>${message}</p></div>`;
+    find("#relinkQueue").innerHTML = `<div class="queue-item"><strong>加载失败</strong><p>${message}</p></div>`;
   } else {
     find("#adminLoginStatus").textContent = error.message;
   }
@@ -958,6 +964,17 @@ async function rejectVideo(videoId) {
     return;
   }
   await requestJson(`/api/admin/videos/${encodeURIComponent(videoId)}/reject`, withUserHeaders({ method: "POST" }));
+  await loadAdminOverview();
+  renderAll();
+}
+
+// 管理员删除视频时采用归档，保留文件记录以便后续人工恢复。
+async function deleteVideo(videoId) {
+  const confirmed = window.confirm("确定删除这个视频？删除后页面不再展示。");
+  if (!confirmed) {
+    return;
+  }
+  await requestJson(`/api/admin/videos/${encodeURIComponent(videoId)}`, withUserHeaders({ method: "DELETE" }));
   await loadAdminOverview();
   renderAll();
 }
@@ -1078,8 +1095,8 @@ async function handleUploadSubmit(event) {
       body: formData
     }));
     setUploadBusy(false, isOuttakeUpload
-      ? "已作为花絮上传并完成低码率转码，等待管理员整理。"
-      : "已上传并完成低码率转码，等待管理员整理。");
+      ? "已作为花絮上传并完成低码率转码。"
+      : "已上传并完成低码率转码。");
     find("#uploadForm").reset();
     await loadPublicOverview();
     await loadUploaderData();
@@ -1215,6 +1232,8 @@ async function handleDocumentClick(event) {
       await reviewVideo(target.dataset.id);
     } else if (action === "reject-video") {
       await rejectVideo(target.dataset.id);
+    } else if (action === "delete-video") {
+      await deleteVideo(target.dataset.id);
     } else if (action === "resolve-relink") {
       await resolveRelink(target.dataset.id);
     } else if (action === "ignore-relink") {

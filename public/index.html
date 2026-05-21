@@ -74,11 +74,8 @@
         <section class="topbar">
           <div>
             <h1>管理后台</h1>
-            <p class="lede">管理员姓名为 raccoon。</p>
           </div>
           <div class="toolbar">
-            <button type="button" data-action="reload">刷新</button>
-            <a class="button" href="/">查看总览</a>
             <button type="button" data-action="logout">退出登录</button>
           </div>
         </section>
@@ -103,14 +100,13 @@
             <div class="stat"><span>歌词句子</span><strong id="adminStatLyrics">0</strong></div>
             <div class="stat"><span>全部有效视频</span><strong id="adminStatVideos">0</strong></div>
             <div class="stat"><span>参与人数</span><strong id="adminStatPeople">0</strong></div>
-            <div class="stat"><span>待处理</span><strong id="adminStatPending">0</strong></div>
           </section>
 
           <section class="workbench admin-workbench">
             <article class="panel">
               <header class="panel-header">
                 <h2>歌词进度</h2>
-                <span>含待整理</span>
+                <span>按句查看</span>
               </header>
               <div class="lyric-list" id="adminLyricList"></div>
             </article>
@@ -138,14 +134,6 @@
           </section>
 
           <section class="footer-grid" id="adminQueues">
-            <article class="panel">
-              <header class="panel-header">
-                <h2>待整理视频</h2>
-                <span>管理员确认后公开</span>
-              </header>
-              <div class="queue" id="pendingQueue"></div>
-            </article>
-
             <article class="panel" id="relink">
               <header class="panel-header">
                 <h2>Relink 暂存区</h2>
@@ -210,7 +198,7 @@
         <label class="dropzone">
           <input id="videoFiles" type="file" multiple accept="video/*" required>
           <span>选择或拖入视频文件</span>
-          <small>提交后进入待整理</small>
+          <small>提交后会直接出现在我的页面</small>
         </label>
         <button class="primary" type="submit">提交上传</button>
         <span class="status-text" id="uploadStatus"></span>

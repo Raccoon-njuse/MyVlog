@@ -425,7 +425,7 @@ function requireAdmin(request, response, next) {
   next();
 }
 
-// 获取总览页需要的歌词、视频、统计和待办数据。公开视图只展示已审核并激活的覆盖关系。
+// 获取总览页需要的歌词、视频、统计和待办数据。公开视图只展示已公开并激活的覆盖关系。
 async function getOverviewData(options = {}) {
   const publicOnly = options.publicOnly === true;
   const linkStatusCondition = publicOnly
@@ -450,10 +450,7 @@ async function getOverviewData(options = {}) {
         (SELECT count(*) FROM lyric_units WHERE is_active = true)::int AS lyric_count,
         (SELECT count(*) FROM videos WHERE status NOT IN ('rejected', 'archived'))::int AS video_count,
         (SELECT count(DISTINCT person_id) FROM videos WHERE status NOT IN ('rejected', 'archived'))::int AS person_count,
-        (
-          (SELECT count(*) FROM videos WHERE status = 'uploaded')
-          + (SELECT count(*) FROM relink_tasks WHERE status = 'pending')
-        )::int AS pending_count
+        (SELECT count(*) FROM relink_tasks WHERE status = 'pending')::int AS pending_count
     `;
   const lyricsPromise = query(`
     SELECT
@@ -509,41 +506,7 @@ async function getOverviewData(options = {}) {
 
   const statsPromise = query(statsSql);
 
-  const pendingVideosPromise = publicOnly ? Promise.resolve({ rows: [] }) : query(`
-    SELECT
-      videos.id::text,
-      videos.original_filename,
-      videos.file_url,
-      videos.playback_file_url,
-      videos.transcode_status,
-      videos.transcode_error,
-      videos.original_size_bytes,
-      videos.playback_size_bytes,
-      videos.playback_bitrate,
-      videos.duration_seconds,
-      videos.status,
-      videos.created_at,
-      persons.display_name AS person_name,
-      COALESCE(
-        json_agg(
-          json_build_object(
-            'linkId', video_lyric_links.id::text,
-            'lyricId', lyric_units.id::text,
-            'lyricText', lyric_units.text,
-            'status', video_lyric_links.status
-          )
-          ORDER BY lyric_units.order_index
-        ) FILTER (WHERE video_lyric_links.id IS NOT NULL),
-        '[]'::json
-      ) AS lyric_links
-    FROM videos
-    JOIN persons ON persons.id = videos.person_id
-    LEFT JOIN video_lyric_links ON video_lyric_links.video_id = videos.id
-    LEFT JOIN lyric_units ON lyric_units.id = video_lyric_links.lyric_unit_id
-    WHERE videos.status = 'uploaded'
-    GROUP BY videos.id, persons.display_name
-    ORDER BY videos.created_at DESC
-  `);
+  const pendingVideosPromise = Promise.resolve({ rows: [] });
 
   const relinkTasksPromise = publicOnly ? Promise.resolve({ rows: [] }) : query(`
     SELECT
@@ -866,7 +829,7 @@ async function cleanupPreparedVideos(preparedVideos) {
   }
 }
 
-// 创建单个视频记录及可选歌词关联；无关联的视频会作为花絮进入待整理。
+// 创建单个视频记录及可选歌词关联；当前上传后直接公开，不再进入审核队列。
 async function createVideoWithLinks(client, personId, preparedVideo, lyricIds) {
   const insertedVideo = await client.query(
     `
@@ -881,9 +844,10 @@ async function createVideoWithLinks(client, personId, preparedVideo, lyricIds) {
         original_size_bytes,
         playback_size_bytes,
         playback_bitrate,
+        status,
         transcoded_at
       )
-      VALUES ($1, $2, $3, $4, $5, 'ready', '', $6, $7, $8, now())
+      VALUES ($1, $2, $3, $4, $5, 'ready', '', $6, $7, $8, 'reviewed', now())
       RETURNING *
     `,
     [
@@ -903,7 +867,7 @@ async function createVideoWithLinks(client, personId, preparedVideo, lyricIds) {
     await client.query(
       `
         INSERT INTO video_lyric_links (video_id, lyric_unit_id, status)
-        VALUES ($1, $2, 'pending')
+        VALUES ($1, $2, 'active')
       `,
       [video.id, lyricIds[i]]
     );
@@ -1171,6 +1135,50 @@ async function handleRejectVideo(request, response, next) {
   }
 }
 
+// 管理员删除视频采用归档方式，避免误删原始文件和播放副本。
+async function handleDeleteVideo(request, response, next) {
+  try {
+    const result = await withTransaction(async function deleteVideoTransaction(client) {
+      const video = await client.query(
+        `
+          UPDATE videos
+          SET status = 'archived',
+              updated_at = now()
+          WHERE id = $1
+          RETURNING *
+        `,
+        [request.params.id]
+      );
+
+      if (video.rows.length === 0) {
+        return null;
+      }
+
+      await client.query(
+        `
+          UPDATE video_lyric_links
+          SET status = 'archived',
+              updated_at = now()
+          WHERE video_id = $1
+            AND status <> 'archived'
+        `,
+        [request.params.id]
+      );
+
+      return video.rows[0];
+    });
+
+    if (!result) {
+      response.status(404).json({ error: "视频不存在" });
+      return;
+    }
+
+    response.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 // 将 Relink 任务重新关联到新的歌词句子。
 async function handleResolveRelinkTask(request, response, next) {
   try {
@@ -1308,12 +1316,14 @@ app.put("/api/admin/lyrics/structure", requireAdmin, handleReplaceLyricStructure
 app.patch("/api/admin/lyrics/:id", requireAdmin, handleUpdateLyric);
 app.post("/api/admin/videos/:id/review", requireAdmin, handleReviewVideo);
 app.post("/api/admin/videos/:id/reject", requireAdmin, handleRejectVideo);
+app.delete("/api/admin/videos/:id", requireAdmin, handleDeleteVideo);
 app.post("/api/admin/relink-tasks/:id/resolve", requireAdmin, handleResolveRelinkTask);
 app.post("/api/admin/relink-tasks/:id/ignore", requireAdmin, handleIgnoreRelinkTask);
 app.put("/api/lyrics/structure", requireAdmin, handleReplaceLyricStructure);
 app.patch("/api/lyrics/:id", requireAdmin, handleUpdateLyric);
 app.post("/api/videos/:id/review", requireAdmin, handleReviewVideo);
 app.post("/api/videos/:id/reject", requireAdmin, handleRejectVideo);
+app.delete("/api/videos/:id", requireAdmin, handleDeleteVideo);
 app.post("/api/relink-tasks/:id/resolve", requireAdmin, handleResolveRelinkTask);
 app.post("/api/relink-tasks/:id/ignore", requireAdmin, handleIgnoreRelinkTask);
 app.use("/api", handleApiNotFound);
