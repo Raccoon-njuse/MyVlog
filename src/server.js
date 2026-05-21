@@ -114,6 +114,22 @@ function mapLyricRow(row) {
   };
 }
 
+// 将数据库视频行整理成测试页使用的前端结构。
+function mapTestVideoRow(row) {
+  return {
+    id: row.id,
+    title: row.original_filename,
+    fileUrl: row.file_url,
+    thumbnailUrl: row.thumbnail_url,
+    status: row.status,
+    durationSeconds: row.duration_seconds,
+    personName: row.person_name,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lyricLinks: row.lyric_links || []
+  };
+}
+
 // 提取被结构变更影响的关联标识。
 function mapLinkId(link) {
   return link.id;
@@ -357,10 +373,60 @@ async function getUploaderData(name) {
   };
 }
 
+// 获取测试页需要的所有视频，不按审核状态过滤，方便排查真实文件播放问题。
+async function getTestVideos() {
+  const result = await query(`
+    SELECT
+      videos.id::text,
+      videos.original_filename,
+      videos.file_url,
+      videos.thumbnail_url,
+      videos.status,
+      videos.duration_seconds,
+      videos.created_at,
+      videos.updated_at,
+      persons.display_name AS person_name,
+      COALESCE(
+        json_agg(
+          json_build_object(
+            'linkId', video_lyric_links.id::text,
+            'lyricId', lyric_units.id::text,
+            'orderIndex', lyric_units.order_index,
+            'lyricText', lyric_units.text,
+            'status', video_lyric_links.status
+          )
+          ORDER BY lyric_units.order_index NULLS LAST, video_lyric_links.created_at
+        ) FILTER (WHERE video_lyric_links.id IS NOT NULL),
+        '[]'::json
+      ) AS lyric_links
+    FROM videos
+    JOIN persons ON persons.id = videos.person_id
+    LEFT JOIN video_lyric_links ON video_lyric_links.video_id = videos.id
+    LEFT JOIN lyric_units ON lyric_units.id = video_lyric_links.lyric_unit_id
+    GROUP BY videos.id, persons.display_name
+    ORDER BY videos.created_at DESC
+  `);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    videos: result.rows.map(mapTestVideoRow)
+  };
+}
+
 // 返回访客总览数据。
 async function handleGetPublicOverview(_request, response, next) {
   try {
     response.json(await getOverviewData({ publicOnly: true }));
+  } catch (error) {
+    next(error);
+  }
+}
+
+// 返回全量视频测试数据，并禁止浏览器缓存接口结果。
+async function handleGetTestVideos(_request, response, next) {
+  try {
+    response.setHeader("Cache-Control", "no-store");
+    response.json(await getTestVideos());
   } catch (error) {
     next(error);
   }
@@ -819,6 +885,11 @@ function handleIndexFallback(_request, response) {
   response.sendFile(path.join(publicDir, "index.html"));
 }
 
+// 返回独立视频播放测试页，避免复用主应用的延迟加载策略。
+function handleTestPage(_request, response) {
+  response.sendFile(path.join(publicDir, "test.html"));
+}
+
 // 处理未匹配到的 API 请求。
 function handleApiNotFound(_request, response) {
   response.status(404).json({ error: "接口不存在" });
@@ -842,6 +913,7 @@ async function handleSigterm() {
 }
 
 app.get("/api/overview", handleGetPublicOverview);
+app.get("/api/test/videos", handleGetTestVideos);
 app.get("/api/uploader/me", handleGetUploaderData);
 app.get("/api/admin/overview", requireAdmin, handleGetAdminOverview);
 app.post("/api/uploads", upload.array("videos", 8), handleCreateUpload);
@@ -858,6 +930,7 @@ app.post("/api/videos/:id/reject", requireAdmin, handleRejectVideo);
 app.post("/api/relink-tasks/:id/resolve", requireAdmin, handleResolveRelinkTask);
 app.post("/api/relink-tasks/:id/ignore", requireAdmin, handleIgnoreRelinkTask);
 app.use("/api", handleApiNotFound);
+app.get("/test", handleTestPage);
 app.get("*", handleIndexFallback);
 app.use(handleError);
 
