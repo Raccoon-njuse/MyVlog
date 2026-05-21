@@ -21,6 +21,7 @@ const uploadDir = path.isAbsolute(configuredUploadDir)
 const uploadUrlPrefix = "/storage/videos";
 const port = Number(process.env.PORT || 3000);
 const adminUserName = String(process.env.ADMIN_NAME || "raccoon").toLowerCase();
+const maxUploadTestBytes = Number(process.env.MAX_UPLOAD_TEST_BYTES || 1024 * 1024 * 120);
 
 fsSync.mkdirSync(uploadDir, { recursive: true });
 
@@ -128,6 +129,23 @@ function mapTestVideoRow(row) {
     updatedAt: row.updated_at,
     lyricLinks: row.lyric_links || []
   };
+}
+
+// 输出上传测速结果，便于区分真实业务上传和纯链路测速。
+function logUploadBandwidthTest(request, payload) {
+  console.info(
+    [
+      "[upload-test]",
+      request.method,
+      request.originalUrl,
+      `status=${payload.status}`,
+      `bytes=${payload.bytes}`,
+      `durationMs=${payload.durationMs}`,
+      `bytesPerSecond=${payload.bytesPerSecond}`,
+      `mbps=${payload.mbps}`,
+      `remoteAddress=${request.ip || request.socket.remoteAddress || "-"}`
+    ].join(" ")
+  );
 }
 
 // 提取被结构变更影响的关联标识。
@@ -430,6 +448,60 @@ async function handleGetTestVideos(_request, response, next) {
   } catch (error) {
     next(error);
   }
+}
+
+// 接收上传测速数据但不落库、不保存文件，用于测客户端到服务器的真实上传带宽。
+function handleUploadBandwidthTest(request, response, next) {
+  const startedAt = process.hrtime.bigint();
+  let bytes = 0;
+  let responded = false;
+
+  function buildPayload(status) {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    const seconds = durationMs / 1000;
+    const bytesPerSecond = seconds > 0 ? bytes / seconds : 0;
+    const mbps = bytesPerSecond * 8 / 1_000_000;
+    return {
+      status,
+      bytes,
+      durationMs: Number(durationMs.toFixed(1)),
+      bytesPerSecond: Number(bytesPerSecond.toFixed(1)),
+      mbps: Number(mbps.toFixed(3))
+    };
+  }
+
+  request.on("data", function handleUploadTestChunk(chunk) {
+    bytes += chunk.length;
+    if (bytes <= maxUploadTestBytes || responded) {
+      return;
+    }
+    responded = true;
+    const payload = buildPayload(413);
+    logUploadBandwidthTest(request, payload);
+    response.status(413).json({
+      ...payload,
+      error: `上传测速数据超过限制 ${maxUploadTestBytes} bytes`
+    });
+    request.destroy();
+  });
+
+  request.on("end", function handleUploadTestEnd() {
+    if (responded) {
+      return;
+    }
+    responded = true;
+    const payload = buildPayload(200);
+    logUploadBandwidthTest(request, payload);
+    response.json(payload);
+  });
+
+  request.on("error", function handleUploadTestError(error) {
+    if (responded) {
+      return;
+    }
+    responded = true;
+    next(error);
+  });
 }
 
 // 返回管理员总览数据。
@@ -914,6 +986,7 @@ async function handleSigterm() {
 
 app.get("/api/overview", handleGetPublicOverview);
 app.get("/api/test/videos", handleGetTestVideos);
+app.post("/api/test/upload-bandwidth", handleUploadBandwidthTest);
 app.get("/api/uploader/me", handleGetUploaderData);
 app.get("/api/admin/overview", requireAdmin, handleGetAdminOverview);
 app.post("/api/uploads", upload.array("videos", 8), handleCreateUpload);

@@ -92,6 +92,8 @@ storage/videos/
 
 `/test` 用于排查真实视频文件播放问题。打开页面时会请求 `/api/test/videos` 获取所有视频，并为每个视频地址追加 `testSession` 缓存戳；点击“刷新并绕过缓存”会生成新的缓存戳并重新挂载播放器。该页面会在页面右侧和浏览器控制台输出 `[test-video]` 事件日志，便于和服务端静态资源日志对照。
 
+上传带宽可通过 `/api/test/upload-bandwidth` 测试。该接口只读取请求体并丢弃数据，不创建视频记录、不写入 `storage/videos/`，默认最多接收 120MB。测试时需要使用 `Content-Type: application/octet-stream`，避免被普通表单解析中间件按 1MB 表单限制拦截。服务端会输出 `[upload-test]` 日志，响应 JSON 也会包含 `bytes`、`durationMs`、`bytesPerSecond` 和 `mbps`。
+
 服务端会为 `/storage/videos/...` 静态视频请求输出 `[video-static]` 日志，例如：
 
 ```text
