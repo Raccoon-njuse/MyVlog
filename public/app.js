@@ -722,7 +722,7 @@ function renderUploadSelectedLyrics() {
 function getUploadSelectionHint() {
   const selectedCount = state.uploadLyricIds.length;
   if (selectedCount === 0) {
-    return "未选择歌词；点击下一步将作为花絮提交";
+    return "暂未选择歌词；直接点击下一步将作为花絮提交";
   }
   return `已选 ${selectedCount} 句歌词；点击下一步继续上传`;
 }
