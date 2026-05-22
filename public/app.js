@@ -17,7 +17,10 @@ const state = {
   },
   pendingVideos: [],
   relinkTasks: [],
+  users: [],
   uploaderVideos: [],
+  previewLyrics: [],
+  canPreviewAllVideos: false,
   uploaderStats: {
     totalCount: 0,
     pendingCount: 0,
@@ -511,6 +514,7 @@ function applyOverviewData(data) {
   state.stats = data.stats || state.stats;
   state.pendingVideos = data.pendingVideos || [];
   state.relinkTasks = data.relinkTasks || [];
+  state.users = data.users || state.users;
   normalizeActiveLyric();
 }
 
@@ -528,6 +532,8 @@ async function loadAdminOverview() {
 async function loadUploaderData() {
   if (!state.sessionName) {
     state.uploaderVideos = [];
+    state.previewLyrics = [];
+    state.canPreviewAllVideos = false;
     state.uploaderStats = {
       totalCount: 0,
       pendingCount: 0,
@@ -538,6 +544,8 @@ async function loadUploaderData() {
   }
   const data = await requestJson("/api/uploader/me", withUserHeaders());
   state.uploaderVideos = data.videos || [];
+  state.previewLyrics = data.previewLyrics || [];
+  state.canPreviewAllVideos = data.canPreviewAllVideos === true;
   state.uploaderStats = data.stats || state.uploaderStats;
 }
 
@@ -644,6 +652,24 @@ function getUploaderVideosForLyric(lyricId) {
     }
   }
   return matches;
+}
+
+// 读取管理员授权后可预览的公开视频；未授权时不持有这些视频详情。
+function getPreviewVideosForLyric(lyricId) {
+  if (!state.canPreviewAllVideos) {
+    return [];
+  }
+  for (let i = 0; i < state.previewLyrics.length; i += 1) {
+    if (state.previewLyrics[i].id === lyricId) {
+      return state.previewLyrics[i].videos || [];
+    }
+  }
+  return [];
+}
+
+// 判断预览视频是否属于当前登录姓名。
+function isOwnPreviewVideo(video) {
+  return normalizeText(video.personName).toLowerCase() === normalizeText(state.sessionName).toLowerCase();
 }
 
 // 删除或驳回后的视频不再出现在上传者自己的页面。
@@ -860,10 +886,38 @@ function renderInlineUploaderVideo(match) {
   `;
 }
 
+// 渲染管理员授权后可看的同句公开视频。
+function renderInlinePreviewVideo(video) {
+  const status = video.transcodeStatus || "ready";
+  const playable = isVideoPlayable(video);
+  const playbackUrl = getVideoPlaybackUrl(video);
+  const ownerLabel = isOwnPreviewVideo(video) ? "我的素材" : video.personName;
+  return `
+    <article class="inline-video-card">
+      ${playable ? `
+        <video
+          controls
+          playsinline
+          preload="none"
+          data-video-preview
+          data-video-id="${escapeHtml(video.videoId)}"
+          data-video-title="${escapeHtml(video.title)}"
+          data-src="${escapeHtml(playbackUrl)}"
+        ></video>
+      ` : renderVideoUnavailable(video)}
+      <div>
+        <strong>${escapeHtml(video.title)}</strong>
+        <span>${escapeHtml(ownerLabel)} · ${escapeHtml(transcodeStatusLabels[status] || status)}</span>
+      </div>
+    </article>
+  `;
+}
+
 // 渲染上传者移动端歌词行，标注自己已上传的歌词。
 function renderUploaderLyricRow(lyric) {
   const publicCount = countVideosForLyric(lyric);
   const ownMatches = getUploaderVideosForLyric(lyric.id);
+  const previewVideos = getPreviewVideosForLyric(lyric.id);
   const expanded = lyric.id === state.expandedUploaderLyricId;
   const selecting = state.uploadSelectionMode;
   const selected = isUploadLyricSelected(lyric.id);
@@ -873,11 +927,19 @@ function renderUploaderLyricRow(lyric) {
     : "";
   let videosHtml = "";
   if (expanded && !selecting) {
-    for (let i = 0; i < ownMatches.length; i += 1) {
-      videosHtml += renderInlineUploaderVideo(ownMatches[i]);
+    if (state.canPreviewAllVideos) {
+      for (let i = 0; i < previewVideos.length; i += 1) {
+        videosHtml += renderInlinePreviewVideo(previewVideos[i]);
+      }
+    } else {
+      for (let i = 0; i < ownMatches.length; i += 1) {
+        videosHtml += renderInlineUploaderVideo(ownMatches[i]);
+      }
     }
     if (!videosHtml) {
-      videosHtml = '<div class="inline-empty">还没有上传这一句。</div>';
+      videosHtml = state.canPreviewAllVideos
+        ? '<div class="inline-empty">这一句暂无可预览素材。</div>'
+        : '<div class="inline-empty">还没有上传这一句。</div>';
     }
   }
   return `
@@ -1086,7 +1148,7 @@ function renderUploaderPage() {
   addButton.disabled = false;
   find("#uploaderSummary").textContent = state.uploadSelectionMode
     ? getUploadSelectionHint()
-    : `${countVisibleUploaderVideos()} 个我的视频`;
+    : `${countVisibleUploaderVideos()} 个我的视频${state.canPreviewAllVideos ? " · 已开通预览权限" : ""}`;
   renderUploaderLyricList();
 }
 
@@ -1155,8 +1217,41 @@ function renderAdminPage() {
   find("#adminStatPeople").textContent = state.stats.personCount;
   renderLyricList("#adminLyricList");
   renderDetail("admin");
+  renderUserManagement();
   renderRelinkQueue();
   renderMetronome();
+}
+
+// 渲染管理员页用户管理开关。
+function renderUserManagement() {
+  const list = find("#adminUserList");
+  let html = "";
+  for (let i = 0; i < state.users.length; i += 1) {
+    const user = state.users[i];
+    const enabled = user.canPreviewAllVideos === true;
+    html += `
+      <div class="user-row">
+        <div class="user-main">
+          <strong>${escapeHtml(user.displayName || user.nameKey)}</strong>
+          <span>${Number(user.videoCount || 0)} 个有效视频</span>
+        </div>
+        <button
+          type="button"
+          class="switch-button${enabled ? " on" : ""}"
+          data-action="toggle-user-preview"
+          data-name="${escapeHtml(user.nameKey || user.displayName)}"
+          data-enabled="${enabled ? "true" : "false"}"
+          aria-label="${escapeHtml(user.displayName || user.nameKey)} 预览权限"
+          aria-pressed="${enabled ? "true" : "false"}"
+        >
+          <span class="switch-track" aria-hidden="true">
+            <span class="switch-thumb"></span>
+          </span>
+        </button>
+      </div>
+    `;
+  }
+  list.innerHTML = html || '<div class="queue-item"><strong>暂无用户</strong><p>用户输入姓名登录后会出现在这里。</p></div>';
 }
 
 // 渲染待整理视频队列中的歌词摘要。
@@ -1300,6 +1395,20 @@ async function ignoreRelink(taskId) {
   renderAll();
 }
 
+// 更新指定姓名的上传者预览权限。
+async function updateUserPreviewPermission(name, enabled) {
+  await requestJson("/api/admin/users/preview-permission", withUserHeaders({
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      canPreviewAllVideos: enabled
+    })
+  }));
+  await loadAdminOverview();
+  renderAll();
+}
+
 // 从上传表单中收集被选中的歌词标识。
 function collectSelectedLyricIds() {
   return state.uploadLyricIds.slice();
@@ -1431,6 +1540,18 @@ function closeUploadSheet() {
   renderAll();
 }
 
+// 姓名登录即注册，方便管理员在后台直接管理预览权限。
+async function registerUserName(name) {
+  await requestJson("/api/users/register", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-Name": encodeURIComponent(name)
+    },
+    body: JSON.stringify({ name })
+  });
+}
+
 // 保存姓名并刷新当前页面。
 async function loginWithName(name) {
   const normalized = normalizeText(name);
@@ -1438,6 +1559,7 @@ async function loginWithName(name) {
     window.alert("请填写姓名");
     return;
   }
+  await registerUserName(normalized);
   state.sessionName = normalized;
   window.localStorage.setItem(SESSION_KEY, normalized);
   closeLoginSheet();
@@ -1456,6 +1578,8 @@ async function loginWithName(name) {
 async function logout() {
   state.sessionName = "";
   state.uploaderVideos = [];
+  state.previewLyrics = [];
+  state.canPreviewAllVideos = false;
   state.uploaderStats = {
     totalCount: 0,
     pendingCount: 0,
@@ -1537,6 +1661,8 @@ async function handleDocumentClick(event) {
       await resolveRelink(target.dataset.id);
     } else if (action === "ignore-relink") {
       await ignoreRelink(target.dataset.id);
+    } else if (action === "toggle-user-preview") {
+      await updateUserPreviewPermission(target.dataset.name, target.dataset.enabled !== "true");
     }
   } catch (error) {
     window.alert(error.message);
@@ -1546,19 +1672,31 @@ async function handleDocumentClick(event) {
 // 处理上传者登录表单。
 async function handleUploaderLogin(event) {
   event.preventDefault();
-  await loginWithName(find("#uploaderNameInput").value);
+  try {
+    await loginWithName(find("#uploaderNameInput").value);
+  } catch (error) {
+    window.alert(error.message);
+  }
 }
 
 // 处理管理员登录表单。
 async function handleAdminLogin(event) {
   event.preventDefault();
-  await loginWithName(find("#adminNameInput").value);
+  try {
+    await loginWithName(find("#adminNameInput").value);
+  } catch (error) {
+    window.alert(error.message);
+  }
 }
 
 // 处理访客浮动按钮打开的姓名输入。
 async function handleQuickLogin(event) {
   event.preventDefault();
-  await loginWithName(find("#quickLoginName").value);
+  try {
+    await loginWithName(find("#quickLoginName").value);
+  } catch (error) {
+    window.alert(error.message);
+  }
 }
 
 // 处理节拍器滑杆的即时速度调整。

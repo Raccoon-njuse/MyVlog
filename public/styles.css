@@ -1130,6 +1130,79 @@ h1 {
   flex-wrap: wrap;
 }
 
+.user-list {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.user-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.user-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.user-main strong {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.user-main span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.switch-button {
+  width: 50px;
+  min-width: 50px;
+  min-height: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.switch-track {
+  position: relative;
+  display: block;
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  background: #c7d0c8;
+  transition: background 0.18s ease;
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(31, 42, 36, 0.2);
+  transition: transform 0.18s ease;
+}
+
+.switch-button.on .switch-track {
+  background: var(--green);
+}
+
+.switch-button.on .switch-thumb {
+  transform: translateX(20px);
+}
+
 .mini-list {
   display: grid;
   gap: 6px;
@@ -1153,7 +1226,8 @@ h1 {
 }
 
 #adminQueues {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(280px, 0.6fr) minmax(360px, 1fr);
+  align-items: start;
 }
 
 .structure-panel {
@@ -1213,6 +1287,7 @@ h1 {
 
   .stats,
   .footer-grid,
+  #adminQueues,
   .video-grid {
     grid-template-columns: 1fr;
   }

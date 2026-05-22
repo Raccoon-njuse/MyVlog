@@ -408,6 +408,18 @@ function mapTestVideoRow(row) {
   };
 }
 
+// 将用户行整理成前端管理页使用的结构。
+function mapUserRow(row) {
+  return {
+    nameKey: row.name_key || row.name || "",
+    displayName: row.display_name,
+    canPreviewAllVideos: Boolean(row.can_preview_all_videos),
+    videoCount: Number(row.video_count || 0),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
 // 输出上传测速结果，便于区分真实业务上传和纯链路测速。
 function logUploadBandwidthTest(request, payload) {
   console.info(
@@ -690,9 +702,13 @@ function requireAdmin(request, response, next) {
 // 获取总览页需要的歌词、视频、统计和待办数据。公开视图只展示已公开并激活的覆盖关系。
 async function getOverviewData(options = {}) {
   const publicOnly = options.publicOnly === true;
+  const includeVideoDetails = options.includeVideoDetails !== false;
   const linkStatusCondition = publicOnly
     ? "video_lyric_links.status = 'active'"
     : "video_lyric_links.status IN ('pending', 'active')";
+  const coverageLinkStatusCondition = publicOnly
+    ? "coverage_links.status = 'active'"
+    : "coverage_links.status IN ('pending', 'active')";
   const videoStatusCondition = publicOnly
     ? "videos.status = 'reviewed' AND videos.transcode_status = 'ready' AND videos.playback_file_url IS NOT NULL"
     : "videos.status NOT IN ('rejected', 'archived')";
@@ -729,33 +745,35 @@ async function getOverviewData(options = {}) {
         JOIN videos AS coverage_videos
           ON coverage_videos.id = coverage_links.video_id
         WHERE coverage_links.lyric_unit_id = lyric_units.id
-          AND coverage_links.status IN ('pending', 'active')
+          AND ${coverageLinkStatusCondition}
           AND ${coverageVideoStatusCondition}
       ) AS video_count,
-      COALESCE(
-        json_agg(
-          json_build_object(
-            'linkId', video_lyric_links.id::text,
-            'linkStatus', video_lyric_links.status,
-            'videoId', videos.id::text,
-            'title', videos.original_filename,
-            'fileUrl', videos.playback_file_url,
-            'originalFileUrl', videos.file_url,
-            'playbackFileUrl', videos.playback_file_url,
-            'thumbnailUrl', videos.thumbnail_url,
-            'videoStatus', videos.status,
-            'transcodeStatus', videos.transcode_status,
-            'transcodeError', videos.transcode_error,
-            'originalSizeBytes', videos.original_size_bytes,
-            'playbackSizeBytes', videos.playback_size_bytes,
-            'playbackBitrate', videos.playback_bitrate,
-            'durationSeconds', videos.duration_seconds,
-            'personName', persons.display_name
-          )
-          ORDER BY videos.created_at
-        ) FILTER (WHERE videos.id IS NOT NULL),
-        '[]'::json
-      ) AS videos
+      ${includeVideoDetails ? `
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'linkId', video_lyric_links.id::text,
+              'linkStatus', video_lyric_links.status,
+              'videoId', videos.id::text,
+              'title', videos.original_filename,
+              'fileUrl', videos.playback_file_url,
+              'originalFileUrl', videos.file_url,
+              'playbackFileUrl', videos.playback_file_url,
+              'thumbnailUrl', videos.thumbnail_url,
+              'videoStatus', videos.status,
+              'transcodeStatus', videos.transcode_status,
+              'transcodeError', videos.transcode_error,
+              'originalSizeBytes', videos.original_size_bytes,
+              'playbackSizeBytes', videos.playback_size_bytes,
+              'playbackBitrate', videos.playback_bitrate,
+              'durationSeconds', videos.duration_seconds,
+              'personName', persons.display_name
+            )
+            ORDER BY videos.created_at
+          ) FILTER (WHERE videos.id IS NOT NULL),
+          '[]'::json
+        )
+      ` : "'[]'::json"} AS videos
     FROM lyric_units
     LEFT JOIN video_lyric_links
       ON video_lyric_links.lyric_unit_id = lyric_units.id
@@ -812,8 +830,43 @@ async function getOverviewData(options = {}) {
   };
 }
 
+// 汇总所有已注册姓名，管理员在用户管理模块里按姓名授予预览权限。
+async function getAdminUsers() {
+  const result = await query(`
+    SELECT
+      lower(persons.name) AS name_key,
+      (array_agg(persons.display_name ORDER BY persons.created_at ASC))[1] AS display_name,
+      bool_or(persons.can_preview_all_videos) AS can_preview_all_videos,
+      count(DISTINCT videos.id) FILTER (
+        WHERE videos.status NOT IN ('rejected', 'archived')
+      )::int AS video_count,
+      min(persons.created_at) AS created_at,
+      max(persons.updated_at) AS updated_at
+    FROM persons
+    LEFT JOIN videos ON videos.person_id = persons.id
+    GROUP BY lower(persons.name)
+    ORDER BY min(persons.created_at) ASC
+  `);
+  return result.rows.map(mapUserRow);
+}
+
+// 按姓名读取预览权限；历史重复姓名只要有一条开启就视为开启。
+async function getPreviewPermissionForName(name) {
+  const result = await query(
+    `
+      SELECT COALESCE(bool_or(can_preview_all_videos), false) AS can_preview_all_videos
+      FROM persons
+      WHERE lower(name) = lower($1)
+        OR lower(display_name) = lower($1)
+    `,
+    [name]
+  );
+  return Boolean(result.rows[0]?.can_preview_all_videos);
+}
+
 // 获取某个上传者自己的视频列表。
 async function getUploaderData(name) {
+  const canPreviewAllVideos = await getPreviewPermissionForName(name);
   const videosPromise = query(
     `
       SELECT
@@ -877,9 +930,17 @@ async function getUploaderData(name) {
     [name]
   );
 
-  const results = await Promise.all([videosPromise, statsPromise]);
+  const previewLyricsPromise = canPreviewAllVideos
+    ? getOverviewData({ publicOnly: true, includeVideoDetails: true }).then(function mapPreviewData(data) {
+      return data.lyrics;
+    })
+    : Promise.resolve([]);
+
+  const results = await Promise.all([videosPromise, statsPromise, previewLyricsPromise]);
   return {
     userName: name,
+    canPreviewAllVideos,
+    previewLyrics: results[2],
     videos: results[0].rows,
     stats: {
       totalCount: results[1].rows[0].total_count,
@@ -939,7 +1000,7 @@ async function getTestVideos() {
 // 返回访客总览数据。
 async function handleGetPublicOverview(_request, response, next) {
   try {
-    response.json(await getOverviewData({ publicOnly: true }));
+    response.json(await getOverviewData({ publicOnly: true, includeVideoDetails: false }));
   } catch (error) {
     next(error);
   }
@@ -1012,7 +1073,14 @@ function handleUploadBandwidthTest(request, response, next) {
 // 返回管理员总览数据。
 async function handleGetAdminOverview(_request, response, next) {
   try {
-    response.json(await getOverviewData());
+    const [overview, users] = await Promise.all([
+      getOverviewData(),
+      getAdminUsers()
+    ]);
+    response.json({
+      ...overview,
+      users
+    });
   } catch (error) {
     next(error);
   }
@@ -1026,7 +1094,65 @@ async function handleGetUploaderData(request, response, next) {
       response.status(401).json({ error: "请先输入姓名登录" });
       return;
     }
+    await withTransaction(async function registerUploaderBeforeRead(client) {
+      return findOrCreatePerson(client, { name });
+    });
     response.json(await getUploaderData(name));
+  } catch (error) {
+    next(error);
+  }
+}
+
+// 姓名登录即注册，确保管理员可以看到尚未上传视频的用户。
+async function handleRegisterUser(request, response, next) {
+  try {
+    const name = getRequestUserName(request);
+    if (!name) {
+      response.status(400).json({ error: "请填写姓名" });
+      return;
+    }
+    const person = await withTransaction(async function registerUserTransaction(client) {
+      return findOrCreatePerson(client, { name });
+    });
+    response.status(201).json({ user: mapUserRow(person) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// 管理员按姓名开启或关闭上传者页面的全员素材预览权限。
+async function handleUpdateUserPreviewPermission(request, response, next) {
+  try {
+    const name = normalizeText(request.body?.name);
+    if (!name) {
+      response.status(400).json({ error: "缺少用户姓名" });
+      return;
+    }
+    const canPreviewAllVideos = request.body?.canPreviewAllVideos === true;
+    const result = await query(
+      `
+        UPDATE persons
+        SET can_preview_all_videos = $2,
+            updated_at = now()
+        WHERE lower(name) = lower($1)
+          OR lower(display_name) = lower($1)
+        RETURNING
+          lower(name) AS name_key,
+          display_name,
+          can_preview_all_videos,
+          0::int AS video_count,
+          created_at,
+          updated_at
+      `,
+      [name, canPreviewAllVideos]
+    );
+
+    if (result.rows.length === 0) {
+      response.status(404).json({ error: "用户不存在" });
+      return;
+    }
+
+    response.json({ user: mapUserRow(result.rows[0]) });
   } catch (error) {
     next(error);
   }
@@ -1056,7 +1182,7 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
-// 查找已有参与者，没有匹配项时创建新参与者。
+// 查找已有参与者，没有匹配项时创建新参与者；当前身份模型以姓名为唯一登录凭据。
 async function findOrCreatePerson(client, payload) {
   const contact = normalizeText(payload.contact);
   const name = normalizeText(payload.name);
@@ -1066,14 +1192,36 @@ async function findOrCreatePerson(client, payload) {
       SELECT *
       FROM persons
       WHERE lower(name) = lower($1)
-        AND COALESCE(contact, '') = $2
+        OR lower(display_name) = lower($1)
+      ORDER BY created_at ASC
       LIMIT 1
     `,
-    [name, contact]
+    [name]
   );
 
   if (existing.rows.length > 0) {
-    return existing.rows[0];
+    const current = existing.rows[0];
+    const updated = await client.query(
+      `
+        UPDATE persons
+        SET contact = CASE
+              WHEN contact IS NULL AND $2 <> '' THEN $2
+              ELSE contact
+            END,
+            note = CASE
+              WHEN note = '' AND $3 <> '' THEN $3
+              ELSE note
+            END,
+            updated_at = CASE
+              WHEN (contact IS NULL AND $2 <> '') OR (note = '' AND $3 <> '') THEN now()
+              ELSE updated_at
+            END
+        WHERE id = $1
+        RETURNING *
+      `,
+      [current.id, contact, note]
+    );
+    return updated.rows[0];
   }
 
   const inserted = await client.query(
@@ -1557,7 +1705,9 @@ app.get("/api/test/videos", handleGetTestVideos);
 app.post("/api/test/upload-bandwidth", handleUploadBandwidthTest);
 app.get("/api/uploader/me", handleGetUploaderData);
 app.get("/api/admin/overview", requireAdmin, handleGetAdminOverview);
+app.post("/api/users/register", handleRegisterUser);
 app.post("/api/uploads", upload.array("videos", 8), handleCreateUpload);
+app.post("/api/admin/users/preview-permission", requireAdmin, handleUpdateUserPreviewPermission);
 app.post("/api/admin/videos/:id/review", requireAdmin, handleReviewVideo);
 app.post("/api/admin/videos/:id/reject", requireAdmin, handleRejectVideo);
 app.delete("/api/admin/videos/:id", requireAdmin, handleDeleteVideo);
